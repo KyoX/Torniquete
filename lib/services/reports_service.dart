@@ -119,6 +119,25 @@ class ReportsService {
     return r.minutosCumplidos;
   }
 
+  /// Minutos trabajados calculados únicamente a partir de las marcas
+  /// presentes (sin caer al valor guardado). Se usa al editar un día
+  /// manualmente desde el Historial, donde el usuario define los valores
+  /// definitivos de ese día.
+  static int minutosDesdeMarcas(Registro r) {
+    int total = 0;
+    final e1 = TimeUtils.parseTimeOfDay(r.entrada1);
+    final s1 = TimeUtils.parseTimeOfDay(r.salida1);
+    final e2 = TimeUtils.parseTimeOfDay(r.entrada2);
+    final sr = TimeUtils.parseTimeOfDay(r.salidaReal);
+    if (e1 != null && s1 != null) {
+      total += TimeUtils.toMinutes(s1) - TimeUtils.toMinutes(e1);
+    }
+    if (e2 != null && sr != null) {
+      total += TimeUtils.toMinutes(sr) - TimeUtils.toMinutes(e2);
+    }
+    return total;
+  }
+
   static List<DailyStat> dailyStats(List<Registro> registros) {
     final ordenados = [...registros]..sort((a, b) => b.fecha.compareTo(a.fecha));
     return ordenados

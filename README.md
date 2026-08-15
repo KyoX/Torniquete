@@ -17,10 +17,14 @@ de arriba siempre apunta a la última versión disponible.
   definidas en el onboarding inicial.
 - **Progreso del día**: calcula minutos trabajados, progreso hacia la meta y hora
   estimada de salida.
+- **Confirmar salida**: botón para registrar la hora real de salida cuando se
+  trabaja más tiempo del estimado.
 - **Recordatorio de salida**: notificación local 5 minutos antes de la hora estimada
   de salida.
-- **Historial y reportes**: vistas de historial diario, mensual, balance y proyección
-  de horas.
+- **Historial editable**: cada día del historial se puede editar (corregir cualquiera
+  de las 4 marcas) o reiniciar por completo (borra todas sus marcas).
+- **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
+  de la meta del mes y balance histórico acumulado de horas.
 
 ## Stack
 
@@ -37,7 +41,7 @@ lib/
   models/       # Registro (marcas y metas del día)
   providers/    # AppProvider (config) y RegistroProvider (estado del día)
   services/     # DB, preferencias, notificaciones y reportes
-  screens/      # Onboarding, dashboard, historial, ajustes y reportes
+  screens/      # Onboarding, dashboard, historial, editar día, ajustes y reportes
   widgets/      # Componentes reutilizables del dashboard
 ```
 

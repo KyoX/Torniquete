@@ -7,6 +7,7 @@ import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../utils/time_utils.dart';
+import 'edit_day_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -78,6 +79,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  Future<void> _editarDia(Registro registro) async {
+    final guardado = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => EditDayScreen(registro: registro)),
+    );
+    if (guardado != true) return;
+
+    if (registro.fecha == RegistroProvider.fechaHoy() && mounted) {
+      final appProvider = context.read<AppProvider>();
+      final metaMinutos =
+          appProvider.metaMinutosParaDia(DateTime.now().weekday);
+      await context.read<RegistroProvider>().cargarRegistroDeHoy(metaMinutos);
+    }
+
+    if (!mounted) return;
+    setState(_cargarHistorial);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -102,52 +120,61 @@ class _HistoryScreenState extends State<HistoryScreen> {
               final r = registros[index];
               final cumplida = r.minutosCumplidos >= r.metaMinutos;
               return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _formatearFecha(r.fecha),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _editarDia(r),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _formatearFecha(r.fecha),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
+                              ),
                             ),
-                          ),
-                          Icon(
-                            cumplida
-                                ? Icons.check_circle
-                                : Icons.remove_circle_outline,
-                            color: cumplida ? Colors.green : Colors.orange,
-                          ),
-                          IconButton(
-                            tooltip: 'Reiniciar día',
-                            icon: const Icon(Icons.restart_alt),
-                            onPressed: () => _confirmarReinicio(r),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 16,
-                        runSpacing: 4,
-                        children: [
-                          _Marca('Entrada', r.entrada1),
-                          _Marca('Salida almuerzo', r.salida1),
-                          _Marca('Regreso', r.entrada2),
-                          _Marca('Salida real', r.salidaReal),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${TimeUtils.formatDurationMinutes(r.minutosCumplidos)} '
-                        'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
+                            Icon(
+                              cumplida
+                                  ? Icons.check_circle
+                                  : Icons.remove_circle_outline,
+                              color: cumplida ? Colors.green : Colors.orange,
+                            ),
+                            IconButton(
+                              tooltip: 'Editar día',
+                              icon: const Icon(Icons.edit),
+                              onPressed: () => _editarDia(r),
+                            ),
+                            IconButton(
+                              tooltip: 'Reiniciar día',
+                              icon: const Icon(Icons.restart_alt),
+                              onPressed: () => _confirmarReinicio(r),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 4,
+                          children: [
+                            _Marca('Entrada', r.entrada1),
+                            _Marca('Salida almuerzo', r.salida1),
+                            _Marca('Regreso', r.entrada2),
+                            _Marca('Salida real', r.salidaReal),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${TimeUtils.formatDurationMinutes(r.minutosCumplidos)} '
+                          'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

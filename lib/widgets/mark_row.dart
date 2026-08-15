@@ -8,6 +8,7 @@ class MarkRow extends StatelessWidget {
   final String horaTexto;
   final TimeOfDay? valorActual;
   final ValueChanged<TimeOfDay> onEditar;
+  final VoidCallback? onLimpiar;
 
   const MarkRow({
     super.key,
@@ -16,6 +17,7 @@ class MarkRow extends StatelessWidget {
     required this.horaTexto,
     required this.valorActual,
     required this.onEditar,
+    this.onLimpiar,
   });
 
   Future<void> _editar(BuildContext context) async {
@@ -33,13 +35,24 @@ class MarkRow extends StatelessWidget {
     return ListTile(
       leading: Icon(icon),
       title: Text(label),
-      trailing: TextButton.icon(
-        onPressed: () => _editar(context),
-        icon: const Icon(Icons.edit, size: 16),
-        label: Text(
-          horaTexto,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton.icon(
+            onPressed: () => _editar(context),
+            icon: const Icon(Icons.edit, size: 16),
+            label: Text(
+              horaTexto,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ),
+          if (onLimpiar != null && valorActual != null)
+            IconButton(
+              tooltip: 'Borrar marca',
+              icon: const Icon(Icons.close, size: 18),
+              onPressed: onLimpiar,
+            ),
+        ],
       ),
     );
   }
