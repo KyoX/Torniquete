@@ -39,6 +39,12 @@ jobs:
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk torniquete-latest.apk
 
+      - name: Read app version
+        id: version
+        run: |
+          version_name=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          echo "name=$version_name" >> "$GITHUB_OUTPUT"
+
       - name: Publish latest release
         uses: softprops/action-gh-release@v2
         with:
@@ -47,6 +53,9 @@ jobs:
           body: >-
             Build automático generado desde el commit
             ${{ github.sha }} en `main`.
+
+
+            Versión: ${{ steps.version.outputs.name }} (build ${{ github.run_number }})
           prerelease: true
           make_latest: true
           files: torniquete-latest.apk
