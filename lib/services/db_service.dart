@@ -89,4 +89,10 @@ class DbService {
     final rows = await db.query('registros', orderBy: 'fecha DESC');
     return rows.map(Registro.fromMap).toList();
   }
+
+  /// Elimina por completo el registro de un día (todas sus marcas).
+  Future<void> eliminarRegistro(String fecha) async {
+    final db = await database;
+    await db.delete('registros', where: 'fecha = ?', whereArgs: [fecha]);
+  }
 }

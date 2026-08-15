@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../models/registro.dart';
+import '../providers/app_provider.dart';
+import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../utils/time_utils.dart';
 
@@ -18,6 +21,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
+    _cargarHistorial();
+  }
+
+  void _cargarHistorial() {
     _historialFuture = DbService.instance.getHistorial();
   }
 
@@ -28,6 +35,47 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (_) {
       return fecha;
     }
+  }
+
+  Future<void> _confirmarReinicio(Registro registro) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reiniciar día'),
+        content: Text(
+          'Se borrarán todas las marcas de ${_formatearFecha(registro.fecha)}. '
+          'Esta acción no se puede deshacer.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Reiniciar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+
+    await DbService.instance.eliminarRegistro(registro.fecha);
+
+    if (registro.fecha == RegistroProvider.fechaHoy() && mounted) {
+      final appProvider = context.read<AppProvider>();
+      final metaMinutos =
+          appProvider.metaMinutosParaDia(DateTime.now().weekday);
+      await context.read<RegistroProvider>().cargarRegistroDeHoy(metaMinutos);
+    }
+
+    if (!mounted) return;
+    setState(_cargarHistorial);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Día ${_formatearFecha(registro.fecha)} reiniciado')),
+    );
   }
 
   @override
@@ -75,6 +123,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 : Icons.remove_circle_outline,
                             color: cumplida ? Colors.green : Colors.orange,
                           ),
+                          IconButton(
+                            tooltip: 'Reiniciar día',
+                            icon: const Icon(Icons.restart_alt),
+                            onPressed: () => _confirmarReinicio(r),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -85,6 +138,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           _Marca('Entrada', r.entrada1),
                           _Marca('Salida almuerzo', r.salida1),
                           _Marca('Regreso', r.entrada2),
+                          _Marca('Salida real', r.salidaReal),
                         ],
                       ),
                       const SizedBox(height: 8),

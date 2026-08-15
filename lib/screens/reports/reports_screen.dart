@@ -6,10 +6,11 @@ import 'balance_report_tab.dart';
 import 'daily_report_tab.dart';
 import 'monthly_report_tab.dart';
 import 'projection_report_tab.dart';
+import 'weekly_report_tab.dart';
 
-/// Pantalla de reportes: cumplimiento diario, mensual, proyección del mes
-/// y banco de horas acumulado. Carga los registros una sola vez y los
-/// comparte entre las 4 pestañas.
+/// Pantalla de reportes: cumplimiento diario, semanal, mensual, proyección
+/// del mes y banco de horas acumulado. Carga los registros una sola vez y
+/// los comparte entre las pestañas.
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
 
@@ -29,7 +30,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reportes'),
@@ -37,6 +38,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             isScrollable: true,
             tabs: [
               Tab(text: 'Diario'),
+              Tab(text: 'Semanal'),
               Tab(text: 'Mensual'),
               Tab(text: 'Proyección'),
               Tab(text: 'Banco de horas'),
@@ -64,6 +66,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
             return TabBarView(
               children: [
                 DailyReportTab(registros: registros),
+                WeeklyReportTab(registros: registros),
                 MonthlyReportTab(registros: registros),
                 ProjectionReportTab(registros: registros),
                 BalanceReportTab(registros: registros),

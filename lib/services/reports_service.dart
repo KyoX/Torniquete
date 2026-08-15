@@ -12,6 +12,37 @@ class DailyStat {
   int get diferenciaMinutos => minutosTrabajados - registro.metaMinutos;
 }
 
+class WeeklyStat {
+  final String semanaInicio; // "2026-08-11" (lunes de la semana)
+  final int totalTrabajado;
+  final int totalMeta;
+  final int diasCumplidos;
+  final int totalDias;
+
+  WeeklyStat({
+    required this.semanaInicio,
+    required this.totalTrabajado,
+    required this.totalMeta,
+    required this.diasCumplidos,
+    required this.totalDias,
+  });
+
+  double get porcentaje =>
+      totalMeta == 0 ? 0 : (totalTrabajado / totalMeta * 100);
+
+  String get nombreSemana {
+    final inicio = DateTime.parse(semanaInicio);
+    final fin = inicio.add(const Duration(days: 6));
+    const nombresMes = [
+      'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul',
+      'Ago', 'Sep', 'Oct', 'Nov', 'Dic',
+    ];
+    final inicioTexto = '${inicio.day} ${nombresMes[inicio.month - 1]}';
+    final finTexto = '${fin.day} ${nombresMes[fin.month - 1]} ${fin.year}';
+    return '$inicioTexto - $finTexto';
+  }
+}
+
 class MonthlyStat {
   final String yearMonth; // "2026-08"
   final int totalTrabajado;
@@ -93,6 +124,37 @@ class ReportsService {
     return ordenados
         .map((r) => DailyStat(registro: r, minutosTrabajados: minutosTrabajados(r)))
         .toList();
+  }
+
+  static List<WeeklyStat> weeklyStats(List<Registro> registros) {
+    final Map<String, List<Registro>> porSemana = {};
+    for (final r in registros) {
+      final fecha = DateTime.parse(r.fecha);
+      final lunes = fecha.subtract(Duration(days: fecha.weekday - 1));
+      final key = '${lunes.year.toString().padLeft(4, '0')}-'
+          '${lunes.month.toString().padLeft(2, '0')}-'
+          '${lunes.day.toString().padLeft(2, '0')}';
+      porSemana.putIfAbsent(key, () => []).add(r);
+    }
+    final resultado = porSemana.entries.map((entry) {
+      final registrosSemana = entry.value;
+      final totalTrabajado =
+          registrosSemana.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
+      final totalMeta =
+          registrosSemana.fold<int>(0, (sum, r) => sum + r.metaMinutos);
+      final diasCumplidos = registrosSemana
+          .where((r) => minutosTrabajados(r) >= r.metaMinutos)
+          .length;
+      return WeeklyStat(
+        semanaInicio: entry.key,
+        totalTrabajado: totalTrabajado,
+        totalMeta: totalMeta,
+        diasCumplidos: diasCumplidos,
+        totalDias: registrosSemana.length,
+      );
+    }).toList();
+    resultado.sort((a, b) => b.semanaInicio.compareTo(a.semanaInicio));
+    return resultado;
   }
 
   static List<MonthlyStat> monthlyStats(List<Registro> registros) {
