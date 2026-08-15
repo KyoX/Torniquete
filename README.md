@@ -3,7 +3,7 @@
 Aplicación Flutter para el control de la jornada laboral: marca entrada, salida a
 almorzar, regreso y salida, y sigue tu progreso frente a la meta de horas del día.
 
-[![Descargar APK](https://img.shields.io/badge/Descargar-APK-brightgreen?logo=android)](https://github.com/KyoX/Torniquete/releases/latest/download/torniquete-latest.apk)
+[![Descargar APK](https://img.shields.io/badge/Descargar-APK-brightgreen?logo=android)](https://github.com/KyoX/Torniquete/releases/download/latest/torniquete-latest.apk)
 
 Cada push a `main` compila el APK automáticamente y lo publica en un
 [Release de GitHub](https://github.com/KyoX/Torniquete/releases/tag/latest), así el enlace
@@ -22,7 +22,9 @@ de arriba siempre apunta a la última versión disponible.
 - **Recordatorio de salida**: notificación local 5 minutos antes de la hora estimada
   de salida.
 - **Historial editable**: cada día del historial se puede editar (corregir cualquiera
-  de las 4 marcas) o reiniciar por completo (borra todas sus marcas).
+  de las 4 marcas) o reiniciar por completo (borra todas sus marcas). También se
+  puede agregar un registro para un día pasado que no tenga marcas (por ejemplo,
+  tras reiniciarlo por error).
 - **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
   de la meta del mes y balance histórico acumulado de horas.
 

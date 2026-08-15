@@ -79,6 +79,31 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  Future<void> _agregarDia() async {
+    final ahora = DateTime.now();
+    final fecha = await showDatePicker(
+      context: context,
+      initialDate: ahora,
+      firstDate: DateTime(ahora.year - 2),
+      lastDate: ahora,
+      helpText: 'Selecciona el día a registrar',
+    );
+    if (fecha == null || !mounted) return;
+
+    final fechaStr = DateFormat('yyyy-MM-dd').format(fecha);
+    final existente = await DbService.instance.getRegistroPorFecha(fechaStr);
+    if (!mounted) return;
+
+    final appProvider = context.read<AppProvider>();
+    final registro = existente ??
+        Registro(
+          fecha: fechaStr,
+          metaMinutos: appProvider.metaMinutosParaDia(fecha.weekday),
+        );
+
+    await _editarDia(registro);
+  }
+
   Future<void> _editarDia(Registro registro) async {
     final guardado = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => EditDayScreen(registro: registro)),
@@ -100,6 +125,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Historial')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _agregarDia,
+        icon: const Icon(Icons.add),
+        label: const Text('Agregar día'),
+      ),
       body: FutureBuilder<List<Registro>>(
         future: _historialFuture,
         builder: (context, snapshot) {
@@ -113,7 +143,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             );
           }
           return ListView.separated(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
             itemCount: registros.length,
             separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
