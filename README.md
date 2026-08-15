@@ -7,7 +7,24 @@ almorzar, regreso y salida, y sigue tu progreso frente a la meta de horas del d�
 
 Cada push a `main` compila el APK automáticamente y lo publica en un
 [Release de GitHub](https://github.com/KyoX/Torniquete/releases/tag/latest), así el enlace
-de arriba siempre apunta a la última versión disponible.
+de arriba siempre apunta a la última versión disponible. El APK se firma siempre con la
+misma clave de release, así que instalar una versión nueva sobre una anterior no da error
+de firma.
+
+## Problemas al instalar el APK
+
+Como la app no viene de Play Store, Android puede mostrar advertencias al instalarla:
+
+- **"Play Protect nunca vio antes una app de este desarrollador"**: es normal para
+  cualquier app fuera de Play Store con un certificado nuevo. Solo hay que tocar
+  **"Instalar de todas formas"**.
+- **"No se instaló la app" (sin más detalle, incluso después de tocar "Instalar de
+  todas formas")**: esto pasa cuando Google Play Protect rechaza la instalación en
+  segundo plano por la misma falta de reputación del certificado. Para instalarla:
+  1. Abre **Play Store** → foto de perfil → **Play Protect** → ⚙️ (Ajustes).
+  2. Desactiva **"Escanear apps con Play Protect"**.
+  3. Instala el APK de nuevo.
+  4. Puedes volver a activar el escaneo después; no es necesario dejarlo apagado.
 
 ## Funcionalidades
 
