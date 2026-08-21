@@ -6,6 +6,7 @@ import '../models/registro.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
+import '../services/reports_service.dart';
 import '../utils/time_utils.dart';
 import 'edit_day_screen.dart';
 
@@ -68,7 +69,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final appProvider = context.read<AppProvider>();
       final metaMinutos =
           appProvider.metaMinutosParaDia(DateTime.now().weekday);
-      await context.read<RegistroProvider>().cargarRegistroDeHoy(metaMinutos);
+      await context.read<RegistroProvider>().cargarRegistroDeHoy(
+            metaMinutos,
+            nombreUsuario: appProvider.nombre,
+          );
     }
 
     if (!mounted) return;
@@ -114,7 +118,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final appProvider = context.read<AppProvider>();
       final metaMinutos =
           appProvider.metaMinutosParaDia(DateTime.now().weekday);
-      await context.read<RegistroProvider>().cargarRegistroDeHoy(metaMinutos);
+      await context.read<RegistroProvider>().cargarRegistroDeHoy(
+            metaMinutos,
+            nombreUsuario: appProvider.nombre,
+          );
     }
 
     if (!mounted) return;
@@ -148,7 +155,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
             separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final r = registros[index];
-              final cumplida = r.minutosCumplidos >= r.metaMinutos;
+              final minutos = ReportsService.minutosTrabajados(r);
+              final sinRegistro = minutos <= 0;
+              final cumplida = !sinRegistro && minutos >= r.metaMinutos;
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -171,8 +180,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             Icon(
                               cumplida
                                   ? Icons.check_circle
-                                  : Icons.remove_circle_outline,
-                              color: cumplida ? Colors.green : Colors.orange,
+                                  : (sinRegistro
+                                      ? Icons.remove_circle_outline
+                                      : Icons.error_outline),
+                              color: cumplida
+                                  ? Colors.green
+                                  : (sinRegistro
+                                      ? Colors.grey
+                                      : Colors.orange),
                             ),
                             IconButton(
                               tooltip: 'Editar día',
@@ -199,8 +214,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${TimeUtils.formatDurationMinutes(r.minutosCumplidos)} '
-                          'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}',
+                          sinRegistro
+                              ? 'Sin horas registradas'
+                              : '${TimeUtils.formatDurationMinutes(minutos)} '
+                                  'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],

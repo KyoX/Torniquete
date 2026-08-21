@@ -8,8 +8,14 @@ class DailyStat {
 
   DailyStat({required this.registro, required this.minutosTrabajados});
 
-  bool get cumplida => minutosTrabajados >= registro.metaMinutos;
-  int get diferenciaMinutos => minutosTrabajados - registro.metaMinutos;
+  /// Día sin horas registradas: no cuenta ni a favor ni en contra.
+  bool get sinRegistro => minutosTrabajados <= 0;
+
+  bool get cumplida => !sinRegistro && minutosTrabajados >= registro.metaMinutos;
+
+  /// Diferencia contra la meta. Los días sin horas registradas no restan.
+  int get diferenciaMinutos =>
+      sinRegistro ? 0 : minutosTrabajados - registro.metaMinutos;
 }
 
 class WeeklyStat {
@@ -17,7 +23,8 @@ class WeeklyStat {
   final int totalTrabajado;
   final int totalMeta;
   final int diasCumplidos;
-  final int totalDias;
+  final int totalDias; // días con horas registradas
+  final int diasSinRegistro;
 
   WeeklyStat({
     required this.semanaInicio,
@@ -25,6 +32,7 @@ class WeeklyStat {
     required this.totalMeta,
     required this.diasCumplidos,
     required this.totalDias,
+    this.diasSinRegistro = 0,
   });
 
   double get porcentaje =>
@@ -48,7 +56,8 @@ class MonthlyStat {
   final int totalTrabajado;
   final int totalMeta;
   final int diasCumplidos;
-  final int totalDias;
+  final int totalDias; // días con horas registradas
+  final int diasSinRegistro;
 
   MonthlyStat({
     required this.yearMonth,
@@ -56,6 +65,7 @@ class MonthlyStat {
     required this.totalMeta,
     required this.diasCumplidos,
     required this.totalDias,
+    this.diasSinRegistro = 0,
   });
 
   double get porcentaje =>
@@ -95,11 +105,13 @@ class BalanceDay {
   final String fecha;
   final int diferenciaMinutos;
   final int balanceAcumuladoMinutos;
+  final bool sinRegistro;
 
   BalanceDay({
     required this.fecha,
     required this.diferenciaMinutos,
     required this.balanceAcumuladoMinutos,
+    this.sinRegistro = false,
   });
 }
 
@@ -138,6 +150,14 @@ class ReportsService {
     return total;
   }
 
+  /// Un día "cuenta" solo si tiene horas registradas. Los días en blanco
+  /// no restan contra la meta: el balance es únicamente aditivo.
+  static bool tieneHoras(Registro r) => minutosTrabajados(r) > 0;
+
+  /// Diferencia del día contra su meta; 0 si el día no tiene horas registradas.
+  static int diferenciaMinutos(Registro r) =>
+      tieneHoras(r) ? minutosTrabajados(r) - r.metaMinutos : 0;
+
   static List<DailyStat> dailyStats(List<Registro> registros) {
     final ordenados = [...registros]..sort((a, b) => b.fecha.compareTo(a.fecha));
     return ordenados
@@ -157,11 +177,13 @@ class ReportsService {
     }
     final resultado = porSemana.entries.map((entry) {
       final registrosSemana = entry.value;
+      // Solo los días con horas registradas suman meta; los días en blanco
+      // no generan déficit.
+      final conHoras = registrosSemana.where(tieneHoras).toList();
       final totalTrabajado =
-          registrosSemana.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
-      final totalMeta =
-          registrosSemana.fold<int>(0, (sum, r) => sum + r.metaMinutos);
-      final diasCumplidos = registrosSemana
+          conHoras.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
+      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + r.metaMinutos);
+      final diasCumplidos = conHoras
           .where((r) => minutosTrabajados(r) >= r.metaMinutos)
           .length;
       return WeeklyStat(
@@ -169,9 +191,12 @@ class ReportsService {
         totalTrabajado: totalTrabajado,
         totalMeta: totalMeta,
         diasCumplidos: diasCumplidos,
-        totalDias: registrosSemana.length,
+        totalDias: conHoras.length,
+        diasSinRegistro: registrosSemana.length - conHoras.length,
       );
     }).toList();
+    // Semanas donde no se registraron horas no aportan nada al reporte.
+    resultado.removeWhere((s) => s.totalDias == 0);
     resultado.sort((a, b) => b.semanaInicio.compareTo(a.semanaInicio));
     return resultado;
   }
@@ -184,11 +209,11 @@ class ReportsService {
     }
     final resultado = porMes.entries.map((entry) {
       final registrosMes = entry.value;
+      final conHoras = registrosMes.where(tieneHoras).toList();
       final totalTrabajado =
-          registrosMes.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
-      final totalMeta =
-          registrosMes.fold<int>(0, (sum, r) => sum + r.metaMinutos);
-      final diasCumplidos = registrosMes
+          conHoras.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
+      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + r.metaMinutos);
+      final diasCumplidos = conHoras
           .where((r) => minutosTrabajados(r) >= r.metaMinutos)
           .length;
       return MonthlyStat(
@@ -196,9 +221,11 @@ class ReportsService {
         totalTrabajado: totalTrabajado,
         totalMeta: totalMeta,
         diasCumplidos: diasCumplidos,
-        totalDias: registrosMes.length,
+        totalDias: conHoras.length,
+        diasSinRegistro: registrosMes.length - conHoras.length,
       );
     }).toList();
+    resultado.removeWhere((m) => m.totalDias == 0);
     resultado.sort((a, b) => b.yearMonth.compareTo(a.yearMonth));
     return resultado;
   }
@@ -212,6 +239,11 @@ class ReportsService {
         '${ahora.year.toString().padLeft(4, '0')}-${ahora.month.toString().padLeft(2, '0')}';
     final diasEnMes = DateTime(ahora.year, ahora.month + 1, 0).day;
 
+    final registrosMes =
+        registros.where((r) => r.fecha.startsWith(yearMonth)).toList();
+    final fechasConHoras =
+        registrosMes.where(tieneHoras).map((r) => r.fecha).toSet();
+
     int metaMesMinutos = 0;
     for (var dia = 1; dia <= diasEnMes; dia++) {
       final fecha = DateTime(ahora.year, ahora.month, dia);
@@ -219,10 +251,15 @@ class ReportsService {
           fecha.weekday == DateTime.sunday) {
         continue;
       }
+      // Los días ya pasados sin horas registradas no suman meta: no deben
+      // generar déficit, el conteo es únicamente aditivo.
+      final esPasado = dia < ahora.day;
+      if (esPasado && !fechasConHoras.contains(_fechaKey(fecha))) {
+        continue;
+      }
       metaMesMinutos += appProvider.metaMinutosParaDia(fecha.weekday);
     }
 
-    final registrosMes = registros.where((r) => r.fecha.startsWith(yearMonth));
     final trabajadoHastaHoy = registrosMes.fold<int>(
         0, (sum, r) => sum + minutosTrabajados(r));
 
@@ -241,16 +278,23 @@ class ReportsService {
     );
   }
 
+  static String _fechaKey(DateTime fecha) =>
+      '${fecha.year.toString().padLeft(4, '0')}-'
+      '${fecha.month.toString().padLeft(2, '0')}-'
+      '${fecha.day.toString().padLeft(2, '0')}';
+
   static List<BalanceDay> balanceHistorico(List<Registro> registros) {
     final ordenados = [...registros]..sort((a, b) => a.fecha.compareTo(b.fecha));
     int acumulado = 0;
     return ordenados.map((r) {
-      final diferencia = minutosTrabajados(r) - r.metaMinutos;
+      // Los días sin horas registradas no restan al banco de horas.
+      final diferencia = diferenciaMinutos(r);
       acumulado += diferencia;
       return BalanceDay(
         fecha: r.fecha,
         diferenciaMinutos: diferencia,
         balanceAcumuladoMinutos: acumulado,
+        sinRegistro: !tieneHoras(r),
       );
     }).toList();
   }

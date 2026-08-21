@@ -26,8 +26,10 @@ class DailyReportTab extends StatelessWidget {
     final ahora = DateTime.now();
     final yearMonthActual =
         '${ahora.year.toString().padLeft(4, '0')}-${ahora.month.toString().padLeft(2, '0')}';
-    final delMes =
-        stats.where((s) => s.registro.fecha.startsWith(yearMonthActual)).toList();
+    final delMes = stats
+        .where((s) =>
+            s.registro.fecha.startsWith(yearMonthActual) && !s.sinRegistro)
+        .toList();
     final cumplidosMes = delMes.where((s) => s.cumplida).length;
 
     return ListView(
@@ -61,8 +63,14 @@ class DailyReportTab extends StatelessWidget {
                   child: Row(
                     children: [
                       Icon(
-                        s.cumplida ? Icons.check_circle : Icons.remove_circle_outline,
-                        color: s.cumplida ? Colors.green : Colors.orange,
+                        s.cumplida
+                            ? Icons.check_circle
+                            : (s.sinRegistro
+                                ? Icons.remove_circle_outline
+                                : Icons.error_outline),
+                        color: s.cumplida
+                            ? Colors.green
+                            : (s.sinRegistro ? Colors.grey : Colors.orange),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -75,18 +83,27 @@ class DailyReportTab extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${TimeUtils.formatDurationMinutes(s.minutosTrabajados)} '
-                              'de ${TimeUtils.formatDurationMinutes(s.registro.metaMinutos)}',
+                              s.sinRegistro
+                                  ? 'Sin horas registradas'
+                                  : '${TimeUtils.formatDurationMinutes(s.minutosTrabajados)} '
+                                      'de ${TimeUtils.formatDurationMinutes(s.registro.metaMinutos)}',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ),
                       ),
                       Text(
-                        (s.diferenciaMinutos >= 0 ? '+' : '') +
-                            TimeUtils.formatDurationMinutes(s.diferenciaMinutos),
+                        s.sinRegistro
+                            ? '—'
+                            : (s.diferenciaMinutos >= 0 ? '+' : '') +
+                                TimeUtils.formatDurationMinutes(
+                                    s.diferenciaMinutos),
                         style: TextStyle(
-                          color: s.diferenciaMinutos >= 0 ? Colors.green : Colors.redAccent,
+                          color: s.sinRegistro
+                              ? Colors.grey
+                              : (s.diferenciaMinutos >= 0
+                                  ? Colors.green
+                                  : Colors.redAccent),
                           fontWeight: FontWeight.w600,
                         ),
                       ),

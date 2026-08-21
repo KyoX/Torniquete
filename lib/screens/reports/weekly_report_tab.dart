@@ -63,6 +63,13 @@ class WeeklyReportTab extends StatelessWidget {
                   '${s.diasCumplidos} de ${s.totalDias} días cumplieron la meta',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (s.diasSinRegistro > 0)
+                  Text(
+                    '${s.diasSinRegistro} '
+                    '${s.diasSinRegistro == 1 ? 'día sin horas registradas' : 'días sin horas registradas'} '
+                    '(no cuentan)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),

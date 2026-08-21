@@ -18,7 +18,13 @@ class RegistroProvider extends ChangeNotifier {
 
   static String fechaHoy() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-  Future<void> cargarRegistroDeHoy(int metaMinutos) async {
+  /// Carga (o crea) el registro de hoy. Si se pasa [nombreUsuario] se
+  /// vuelve a programar el recordatorio de salida, para que siga vigente
+  /// aunque la alarma se haya perdido (reinstalación, cierre forzado, etc.).
+  Future<void> cargarRegistroDeHoy(
+    int metaMinutos, {
+    String? nombreUsuario,
+  }) async {
     cargando = true;
     notifyListeners();
     final fecha = fechaHoy();
@@ -30,7 +36,7 @@ class RegistroProvider extends ChangeNotifier {
     }
     cargando = false;
     notifyListeners();
-    await _recalcularYProgramar(nombreParaNotificacion: null);
+    await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
   }
 
   TimeOfDay? get entrada1 => TimeUtils.parseTimeOfDay(registroHoy?.entrada1);

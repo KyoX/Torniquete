@@ -63,6 +63,13 @@ class MonthlyReportTab extends StatelessWidget {
                   '${m.diasCumplidos} de ${m.totalDias} días cumplieron la meta',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (m.diasSinRegistro > 0)
+                  Text(
+                    '${m.diasSinRegistro} '
+                    '${m.diasSinRegistro == 1 ? 'día sin horas registradas' : 'días sin horas registradas'} '
+                    '(no cuentan)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),

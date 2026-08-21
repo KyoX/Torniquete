@@ -82,18 +82,26 @@ class BalanceReportTab extends StatelessWidget {
               child: ListTile(
                 title: Text(_formatearFecha(b.fecha)),
                 subtitle: Text(
-                  'Balance acumulado: '
-                  '${b.balanceAcumuladoMinutos >= 0 ? '+' : ''}'
-                  '${TimeUtils.formatDurationMinutes(b.balanceAcumuladoMinutos)}',
+                  b.sinRegistro
+                      ? 'Sin horas registradas · balance sin cambios: '
+                          '${b.balanceAcumuladoMinutos >= 0 ? '+' : ''}'
+                          '${TimeUtils.formatDurationMinutes(b.balanceAcumuladoMinutos)}'
+                      : 'Balance acumulado: '
+                          '${b.balanceAcumuladoMinutos >= 0 ? '+' : ''}'
+                          '${TimeUtils.formatDurationMinutes(b.balanceAcumuladoMinutos)}',
                 ),
                 trailing: Text(
-                  (b.diferenciaMinutos >= 0 ? '+' : '') +
-                      TimeUtils.formatDurationMinutes(b.diferenciaMinutos),
+                  b.sinRegistro
+                      ? '—'
+                      : (b.diferenciaMinutos >= 0 ? '+' : '') +
+                          TimeUtils.formatDurationMinutes(b.diferenciaMinutos),
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: b.diferenciaMinutos >= 0
-                        ? Colors.green
-                        : Colors.redAccent,
+                    color: b.sinRegistro
+                        ? Colors.grey
+                        : (b.diferenciaMinutos >= 0
+                            ? Colors.green
+                            : Colors.redAccent),
                   ),
                 ),
               ),

@@ -35,7 +35,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final metaMinutos =
         appProvider.metaMinutosParaDia(DateTime.now().weekday);
     if (!mounted) return;
-    await context.read<RegistroProvider>().cargarRegistroDeHoy(metaMinutos);
+    await context.read<RegistroProvider>().cargarRegistroDeHoy(
+          metaMinutos,
+          nombreUsuario: appProvider.nombre,
+        );
   }
 
   @override
