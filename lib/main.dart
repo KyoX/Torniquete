@@ -6,6 +6,7 @@ import 'providers/app_provider.dart';
 import 'providers/registro_provider.dart';
 import 'screens/root_screen.dart';
 import 'services/notification_service.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,21 +28,12 @@ class TorniqueteApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Torniquete',
         debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.teal,
-            brightness: Brightness.light,
-          ),
-        ),
-        darkTheme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.teal,
-            brightness: Brightness.dark,
-          ),
-        ),
+        // Se fija el tema claro para respetar la identidad de la marca
+        // (azul sobre blanco). Cambiar a ThemeMode.system deja que el
+        // teléfono elija entre la versión clara y la oscura.
+        themeMode: ThemeMode.light,
+        theme: AppTheme.claro,
+        darkTheme: AppTheme.oscuro,
         home: const RootScreen(),
       ),
     );

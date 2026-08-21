@@ -44,6 +44,38 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   tras reiniciarlo por error).
 - **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
   de la meta del mes y balance histórico acumulado de horas.
+- **Guardar ubicación** (opcional, desactivada por defecto): al activarla en Ajustes
+  se pide el permiso de ubicación y, desde ese momento, cada marca guarda también
+  las coordenadas donde se registró. Sirve como evidencia ante una auditoría de que
+  sí se llegó al lugar de trabajo. Las coordenadas se guardan solo en el teléfono,
+  se consultan tocando el pin azul junto a cada marca (en el día actual o en
+  "Editar día") y pueden borrarse en cualquier momento desde Ajustes. El detalle
+  de cada marca incluye **"Abrir en Maps"**, que muestra el punto exacto en la app
+  de mapas del teléfono con el nombre de la marca como etiqueta; si no hay ninguna
+  app de mapas instalada abre el mapa web y, como último recurso, copia el enlace.
+  Cuando la hora se corrige a mano, la ubicación queda marcada como manual y el
+  detalle advierte que corresponde al momento de la edición, no a la hora escrita.
+
+## Identidad visual
+
+La app usa la paleta corporativa: **azul** como color principal, **blanco** y
+**amarillo** como secundarios. Todo está centralizado en
+[`lib/theme/app_theme.dart`](lib/theme/app_theme.dart) (`AppColors` para los
+tonos y `AppTheme.claro` / `AppTheme.oscuro` para los temas), así que cambiar
+un tono se hace en un solo sitio.
+
+| Uso | Color |
+| --- | --- |
+| Principal (barras, botones, iconos) | `#0D3C7E` |
+| Degradado del banner | `#0D3C7E` → `#1B5AAE` |
+| Acento (hora de salida, progreso, FAB) | `#F5A623` |
+| Fondo / tarjetas | `#F4F6FA` / blanco |
+
+Los estados también siguen la marca: un día cumplido se marca en azul y uno
+pendiente en amarillo, en vez de verde y naranja. La app fija el tema claro
+(`ThemeMode.light` en [`lib/main.dart`](lib/main.dart)); cambiarlo a
+`ThemeMode.system` habilita la variante oscura, que mantiene los mismos
+colores sobre fondo azul noche.
 
 ## Stack
 
@@ -52,14 +84,16 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
 - `sqflite` para persistencia local de registros
 - `shared_preferences` para configuración del usuario
 - `flutter_local_notifications` + `timezone` para recordatorios
+- `geolocator` para la evidencia opcional de ubicación
+- `url_launcher` para abrir las coordenadas en una app de mapas
 
 ## Estructura
 
 ```text
 lib/
-  models/       # Registro (marcas y metas del día)
+  models/       # Registro (marcas y metas del día) y UbicacionMarca
   providers/    # AppProvider (config) y RegistroProvider (estado del día)
-  services/     # DB, preferencias, notificaciones y reportes
+  services/     # DB, preferencias, notificaciones, ubicación y reportes
   screens/      # Onboarding, dashboard, historial, editar día, ajustes y reportes
   widgets/      # Componentes reutilizables del dashboard
 ```

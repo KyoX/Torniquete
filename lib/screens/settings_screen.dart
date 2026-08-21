@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_provider.dart';
+import '../services/db_service.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
+import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -107,6 +110,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 validator: _validarNumero,
               ),
               const SizedBox(height: 32),
+              const _UbicacionCard(),
+              const SizedBox(height: 16),
               const _NotificacionesCard(),
               const SizedBox(height: 32),
               FilledButton(
@@ -123,6 +128,151 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Permite activar el guardado de la ubicación en cada marca. Está apagado
+/// por defecto; al encenderlo se pide el permiso de ubicación al sistema.
+class _UbicacionCard extends StatefulWidget {
+  const _UbicacionCard();
+
+  @override
+  State<_UbicacionCard> createState() => _UbicacionCardState();
+}
+
+class _UbicacionCardState extends State<_UbicacionCard> {
+  bool _procesando = false;
+
+  void _avisar(String mensaje, {SnackBarAction? accion}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensaje), action: accion),
+    );
+  }
+
+  Future<void> _cambiar(bool valor) async {
+    final appProvider = context.read<AppProvider>();
+    if (!valor) {
+      await appProvider.setGuardarUbicacion(false);
+      _avisar('Ya no se guardará la ubicación de las marcas.');
+      return;
+    }
+
+    setState(() => _procesando = true);
+    final resultado = await LocationService.instance.solicitarPermiso();
+    if (!mounted) return;
+    setState(() => _procesando = false);
+
+    switch (resultado) {
+      case PermisoUbicacion.concedido:
+        await appProvider.setGuardarUbicacion(true);
+        _avisar('Listo: cada marca guardará dónde se registró.');
+        break;
+      case PermisoUbicacion.servicioApagado:
+        _avisar(
+          'El GPS del teléfono está apagado.',
+          accion: SnackBarAction(
+            label: 'Activar',
+            onPressed: LocationService.instance.abrirAjustesDeUbicacion,
+          ),
+        );
+        break;
+      case PermisoUbicacion.denegadoParaSiempre:
+        _avisar(
+          'El permiso de ubicación está bloqueado para esta app.',
+          accion: SnackBarAction(
+            label: 'Ajustes',
+            onPressed: LocationService.instance.abrirAjustesDeLaApp,
+          ),
+        );
+        break;
+      case PermisoUbicacion.denegado:
+        _avisar('Sin permiso de ubicación no se puede guardar la evidencia.');
+        break;
+    }
+  }
+
+  Future<void> _borrarGuardadas() async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Borrar ubicaciones'),
+        content: const Text(
+          'Se eliminarán todas las ubicaciones guardadas junto a tus marcas. '
+          'Las horas registradas no se tocan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+    await DbService.instance.borrarTodasLasUbicaciones();
+    _avisar('Ubicaciones borradas.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activo = context.watch<AppProvider>().guardarUbicacion;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.place_outlined),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Ubicación',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (_procesando)
+                  const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: activo,
+              onChanged: _procesando ? null : _cambiar,
+              title: const Text('Guardar ubicación'),
+              subtitle: const Text(
+                'Guarda dónde estabas al registrar cada marca, por si hay '
+                'que justificar en una auditoría que llegaste al trabajo.',
+              ),
+            ),
+            Text(
+              'Las coordenadas se guardan solo en este teléfono, junto al '
+              'historial, y nunca se envían a ningún servidor.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _borrarGuardadas,
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Borrar ubicaciones guardadas'),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -192,7 +342,7 @@ class _NotificacionesCardState extends State<_NotificacionesCard> {
           Icon(
             ok ? Icons.check_circle : Icons.error_outline,
             size: 20,
-            color: ok ? Colors.green : Colors.orange,
+            color: ok ? AppColors.cumplido : AppColors.pendiente,
           ),
           const SizedBox(width: 10),
           Expanded(child: Text(etiqueta)),

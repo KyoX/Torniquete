@@ -127,6 +127,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             t,
                             nombreUsuario: nombre,
                           ),
+                          ubicacion:
+                              registroProvider.ubicacionDe(MarcaTipo.entrada1),
+                          capturandoUbicacion: registroProvider
+                              .capturandoUbicacion(MarcaTipo.entrada1),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -140,6 +144,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             t,
                             nombreUsuario: nombre,
                           ),
+                          ubicacion:
+                              registroProvider.ubicacionDe(MarcaTipo.salida1),
+                          capturandoUbicacion: registroProvider
+                              .capturandoUbicacion(MarcaTipo.salida1),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -153,6 +161,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             t,
                             nombreUsuario: nombre,
                           ),
+                          ubicacion:
+                              registroProvider.ubicacionDe(MarcaTipo.entrada2),
+                          capturandoUbicacion: registroProvider
+                              .capturandoUbicacion(MarcaTipo.entrada2),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -166,6 +178,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             t,
                             nombreUsuario: nombre,
                           ),
+                          ubicacion:
+                              registroProvider.ubicacionDe(MarcaTipo.salidaReal),
+                          capturandoUbicacion: registroProvider
+                              .capturandoUbicacion(MarcaTipo.salidaReal),
                         ),
                       ],
                     ),

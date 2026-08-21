@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/registro.dart';
 import '../../services/reports_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/time_utils.dart';
 
 /// Banco de horas: balance acumulado (extra u déficit) entre lo trabajado
@@ -98,10 +99,10 @@ class BalanceReportTab extends StatelessWidget {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: b.sinRegistro
-                        ? Colors.grey
+                        ? AppColors.neutro
                         : (b.diferenciaMinutos >= 0
-                            ? Colors.green
-                            : Colors.redAccent),
+                            ? AppColors.cumplido
+                            : AppColors.rojo),
                   ),
                 ),
               ),

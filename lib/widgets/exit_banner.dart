@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import '../utils/time_utils.dart';
 
 /// Banner destacado superior con la hora exacta de salida (o un mensaje
@@ -16,15 +17,14 @@ class ExitBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final tieneHora = horaSalida != null;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [scheme.primaryContainer, scheme.primary.withValues(alpha: 0.35)],
+        gradient: const LinearGradient(
+          colors: [AppColors.azul, AppColors.azulMedio],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -34,8 +34,8 @@ class ExitBanner extends StatelessWidget {
         children: [
           Text(
             tieneHora ? '🎉 Hora de salida' : 'Hora de salida estimada',
-            style: TextStyle(
-              color: scheme.onPrimaryContainer,
+            style: const TextStyle(
+              color: AppColors.blanco,
               fontWeight: FontWeight.w600,
               fontSize: 14,
               letterSpacing: 0.5,
@@ -47,7 +47,7 @@ class ExitBanner extends StatelessWidget {
                 ? TimeUtils.formatAmPm(horaSalida!)
                 : 'Registra tus marcas para calcularla',
             style: TextStyle(
-              color: scheme.onPrimaryContainer,
+              color: tieneHora ? AppColors.amarillo : AppColors.blanco,
               fontWeight: FontWeight.bold,
               fontSize: tieneHora ? 34 : 18,
             ),
@@ -56,8 +56,8 @@ class ExitBanner extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               '✅ Meta de horas cumplida',
-              style: TextStyle(
-                color: scheme.onPrimaryContainer,
+              style: const TextStyle(
+                color: AppColors.blanco,
                 fontWeight: FontWeight.w500,
               ),
             ),

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/registro.dart';
+import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
+import '../services/prefs_service.dart';
 import '../utils/time_utils.dart';
 
 enum MarcaTipo { entrada1, salida1, entrada2, salidaReal }
@@ -12,9 +15,21 @@ enum MarcaTipo { entrada1, salida1, entrada2, salidaReal }
 /// estimada de salida y la persistencia en SQLite + notificaciones.
 class RegistroProvider extends ChangeNotifier {
   final DbService _db = DbService.instance;
+  final PrefsService _prefs = PrefsService();
 
   Registro? registroHoy;
   bool cargando = true;
+
+  /// Ubicaciones guardadas para las marcas de hoy, por tipo de marca.
+  Map<String, UbicacionMarca> ubicacionesHoy = {};
+
+  /// Tipos de marca cuya ubicación se está capturando en este momento.
+  final Set<MarcaTipo> _capturandoUbicacion = {};
+
+  bool capturandoUbicacion(MarcaTipo tipo) =>
+      _capturandoUbicacion.contains(tipo);
+
+  UbicacionMarca? ubicacionDe(MarcaTipo tipo) => ubicacionesHoy[tipo.name];
 
   static String fechaHoy() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -34,6 +49,7 @@ class RegistroProvider extends ChangeNotifier {
     if (existente != null && existente.metaMinutos != metaMinutos) {
       registroHoy = registroHoy!.copyWith(metaMinutos: metaMinutos);
     }
+    ubicacionesHoy = await _db.getUbicacionesPorFecha(fecha);
     cargando = false;
     notifyListeners();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
@@ -122,13 +138,14 @@ class RegistroProvider extends ChangeNotifier {
     TimeOfDay hora, {
     required String nombreUsuario,
   }) async {
-    await _setMarca(tipo, hora, nombreUsuario: nombreUsuario);
+    await _setMarca(tipo, hora, nombreUsuario: nombreUsuario, manual: true);
   }
 
   Future<void> _setMarca(
     MarcaTipo tipo,
     TimeOfDay hora, {
     required String nombreUsuario,
+    bool manual = false,
   }) async {
     if (registroHoy == null) return;
     final valor = TimeUtils.formatTimeOfDay(hora);
@@ -148,6 +165,41 @@ class RegistroProvider extends ChangeNotifier {
     }
     notifyListeners();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
+    await _guardarUbicacionDeMarca(tipo, valor, manual: manual);
+  }
+
+  /// Deja constancia de dónde estaba el usuario al registrar la marca.
+  /// Es totalmente opcional: si el ajuste está apagado, el permiso no está
+  /// concedido o el GPS falla, la marca queda igual y sin ubicación.
+  Future<void> _guardarUbicacionDeMarca(
+    MarcaTipo tipo,
+    String hora, {
+    required bool manual,
+  }) async {
+    if (registroHoy == null) return;
+    if (!await _prefs.getGuardarUbicacion()) return;
+
+    _capturandoUbicacion.add(tipo);
+    notifyListeners();
+    try {
+      final posicion = await LocationService.instance.capturar();
+      if (posicion == null) return;
+      final ubicacion = UbicacionMarca(
+        fecha: registroHoy!.fecha,
+        tipo: tipo.name,
+        hora: hora,
+        latitud: posicion.latitude,
+        longitud: posicion.longitude,
+        precisionMetros: posicion.accuracy,
+        capturadoEn: DateTime.now(),
+        manual: manual,
+      );
+      await _db.guardarUbicacion(ubicacion);
+      ubicacionesHoy = {...ubicacionesHoy, tipo.name: ubicacion};
+    } finally {
+      _capturandoUbicacion.remove(tipo);
+      notifyListeners();
+    }
   }
 
   Future<void> _recalcularYProgramar({String? nombreParaNotificacion}) async {

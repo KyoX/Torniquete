@@ -2,6 +2,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/registro.dart';
+import '../models/ubicacion_marca.dart';
 
 /// Maneja la base de datos SQLite local que almacena el historial
 /// de marcaciones diarias del torniquete.
@@ -21,7 +22,7 @@ class DbService {
     final path = join(dbPath, 'torniquete.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE registros (
@@ -35,13 +36,36 @@ class DbService {
             horas_cumplidas INTEGER NOT NULL DEFAULT 0
           )
         ''');
+        await _crearTablaUbicaciones(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE registros ADD COLUMN salida_real TEXT');
         }
+        if (oldVersion < 3) {
+          await _crearTablaUbicaciones(db);
+        }
       },
     );
+  }
+
+  /// Evidencia opcional de dónde se registró cada marca. Solo se llena si
+  /// el usuario activa "Guardar ubicación" en Ajustes.
+  Future<void> _crearTablaUbicaciones(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ubicaciones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        hora TEXT NOT NULL,
+        latitud REAL NOT NULL,
+        longitud REAL NOT NULL,
+        precision_m REAL,
+        capturado_en TEXT NOT NULL,
+        manual INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (fecha, tipo)
+      )
+    ''');
   }
 
   Future<Registro?> getRegistroPorFecha(String fecha) async {
@@ -90,9 +114,50 @@ class DbService {
     return rows.map(Registro.fromMap).toList();
   }
 
-  /// Elimina por completo el registro de un día (todas sus marcas).
+  /// Elimina por completo el registro de un día (todas sus marcas y las
+  /// ubicaciones asociadas).
   Future<void> eliminarRegistro(String fecha) async {
     final db = await database;
     await db.delete('registros', where: 'fecha = ?', whereArgs: [fecha]);
+    await db.delete('ubicaciones', where: 'fecha = ?', whereArgs: [fecha]);
+  }
+
+  /// Guarda (o reemplaza) la ubicación de una marca concreta.
+  Future<void> guardarUbicacion(UbicacionMarca ubicacion) async {
+    final db = await database;
+    await db.insert(
+      'ubicaciones',
+      ubicacion.toMap()..remove('id'),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Ubicaciones de un día, indexadas por tipo de marca.
+  Future<Map<String, UbicacionMarca>> getUbicacionesPorFecha(
+      String fecha) async {
+    final db = await database;
+    final rows = await db.query(
+      'ubicaciones',
+      where: 'fecha = ?',
+      whereArgs: [fecha],
+    );
+    return {
+      for (final row in rows)
+        row['tipo'] as String: UbicacionMarca.fromMap(row),
+    };
+  }
+
+  /// Todas las ubicaciones guardadas, de la más reciente a la más antigua.
+  Future<List<UbicacionMarca>> getTodasLasUbicaciones() async {
+    final db = await database;
+    final rows =
+        await db.query('ubicaciones', orderBy: 'fecha DESC, hora DESC');
+    return rows.map(UbicacionMarca.fromMap).toList();
+  }
+
+  /// Borra toda la evidencia de ubicación guardada.
+  Future<void> borrarTodasLasUbicaciones() async {
+    final db = await database;
+    await db.delete('ubicaciones');
   }
 }

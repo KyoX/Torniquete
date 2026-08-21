@@ -9,6 +9,9 @@ class AppProvider extends ChangeNotifier {
   String? nombre;
   double metaLJHoras = PrefsService.defaultMetaLJ;
   double metaViernesHoras = PrefsService.defaultMetaViernes;
+
+  /// Si está activo, cada marca guarda también dónde se registró.
+  bool guardarUbicacion = false;
   bool cargado = false;
 
   Future<bool> tieneUsuarioConfigurado() => _prefsService.tieneUsuario();
@@ -17,6 +20,7 @@ class AppProvider extends ChangeNotifier {
     nombre = await _prefsService.getNombre();
     metaLJHoras = await _prefsService.getMetaLJ();
     metaViernesHoras = await _prefsService.getMetaViernes();
+    guardarUbicacion = await _prefsService.getGuardarUbicacion();
     cargado = true;
     notifyListeners();
   }
@@ -35,6 +39,12 @@ class AppProvider extends ChangeNotifier {
     this.metaLJHoras = metaLJHoras;
     this.metaViernesHoras = metaViernesHoras;
     cargado = true;
+    notifyListeners();
+  }
+
+  Future<void> setGuardarUbicacion(bool valor) async {
+    await _prefsService.setGuardarUbicacion(valor);
+    guardarUbicacion = valor;
     notifyListeners();
   }
 

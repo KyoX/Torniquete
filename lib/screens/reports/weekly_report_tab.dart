@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/registro.dart';
 import '../../services/reports_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/time_utils.dart';
 
 class WeeklyReportTab extends StatelessWidget {
@@ -40,7 +41,7 @@ class WeeklyReportTab extends StatelessWidget {
                       '${s.porcentaje.toStringAsFixed(0)}%',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: cumplioSemana ? Colors.green : Colors.orange,
+                        color: cumplioSemana ? AppColors.cumplido : AppColors.pendiente,
                       ),
                     ),
                   ],

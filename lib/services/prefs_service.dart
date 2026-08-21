@@ -6,6 +6,7 @@ class PrefsService {
   static const _keyNombre = 'nombre_usuario';
   static const _keyMetaLJ = 'meta_lj_horas';
   static const _keyMetaViernes = 'meta_viernes_horas';
+  static const _keyGuardarUbicacion = 'guardar_ubicacion';
 
   static const double defaultMetaLJ = 8.5;
   static const double defaultMetaViernes = 6.5;
@@ -29,6 +30,18 @@ class PrefsService {
   Future<double> getMetaViernes() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getDouble(_keyMetaViernes) ?? defaultMetaViernes;
+  }
+
+  /// Desactivado por defecto: la ubicación solo se guarda si el usuario
+  /// lo habilita expresamente en Ajustes.
+  Future<bool> getGuardarUbicacion() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyGuardarUbicacion) ?? false;
+  }
+
+  Future<void> setGuardarUbicacion(bool valor) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyGuardarUbicacion, valor);
   }
 
   Future<void> guardarConfiguracion({

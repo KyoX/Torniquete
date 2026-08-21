@@ -7,6 +7,7 @@ import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../services/reports_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/time_utils.dart';
 import 'edit_day_screen.dart';
 
@@ -184,10 +185,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       ? Icons.remove_circle_outline
                                       : Icons.error_outline),
                               color: cumplida
-                                  ? Colors.green
+                                  ? AppColors.cumplido
                                   : (sinRegistro
-                                      ? Colors.grey
-                                      : Colors.orange),
+                                      ? AppColors.neutro
+                                      : AppColors.pendiente),
                             ),
                             IconButton(
                               tooltip: 'Editar día',

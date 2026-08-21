@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/registro.dart';
 import '../../providers/app_provider.dart';
 import '../../services/reports_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/time_utils.dart';
 
 class ProjectionReportTab extends StatelessWidget {
@@ -127,7 +128,7 @@ class _InfoCard extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
                 color: destacado
-                    ? (positivo ? Colors.green : Colors.redAccent)
+                    ? (positivo ? AppColors.cumplido : AppColors.rojo)
                     : null,
               ),
             ),

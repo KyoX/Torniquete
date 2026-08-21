@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/registro.dart';
+import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
 import '../services/reports_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/time_utils.dart';
 import '../widgets/mark_row.dart';
 
@@ -24,6 +26,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
   TimeOfDay? _entrada2;
   TimeOfDay? _salidaReal;
   bool _guardando = false;
+  Map<String, UbicacionMarca> _ubicaciones = {};
 
   @override
   void initState() {
@@ -32,6 +35,14 @@ class _EditDayScreenState extends State<EditDayScreen> {
     _salida1 = TimeUtils.parseTimeOfDay(widget.registro.salida1);
     _entrada2 = TimeUtils.parseTimeOfDay(widget.registro.entrada2);
     _salidaReal = TimeUtils.parseTimeOfDay(widget.registro.salidaReal);
+    _cargarUbicaciones();
+  }
+
+  Future<void> _cargarUbicaciones() async {
+    final ubicaciones =
+        await DbService.instance.getUbicacionesPorFecha(widget.registro.fecha);
+    if (!mounted) return;
+    setState(() => _ubicaciones = ubicaciones);
   }
 
   String get _fechaFormateada {
@@ -98,6 +109,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                   valorActual: _entrada1,
                   onEditar: (t) => setState(() => _entrada1 = t),
                   onLimpiar: () => setState(() => _entrada1 = null),
+                  ubicacion: _ubicaciones['entrada1'],
                 ),
                 const Divider(height: 1),
                 MarkRow(
@@ -108,6 +120,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                   valorActual: _salida1,
                   onEditar: (t) => setState(() => _salida1 = t),
                   onLimpiar: () => setState(() => _salida1 = null),
+                  ubicacion: _ubicaciones['salida1'],
                 ),
                 const Divider(height: 1),
                 MarkRow(
@@ -118,6 +131,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                   valorActual: _entrada2,
                   onEditar: (t) => setState(() => _entrada2 = t),
                   onLimpiar: () => setState(() => _entrada2 = null),
+                  ubicacion: _ubicaciones['entrada2'],
                 ),
                 const Divider(height: 1),
                 MarkRow(
@@ -129,6 +143,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                   valorActual: _salidaReal,
                   onEditar: (t) => setState(() => _salidaReal = t),
                   onLimpiar: () => setState(() => _salidaReal = null),
+                  ubicacion: _ubicaciones['salidaReal'],
                 ),
               ],
             ),
@@ -144,7 +159,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                     children: [
                       Icon(
                         cumple ? Icons.check_circle : Icons.remove_circle_outline,
-                        color: cumple ? Colors.green : Colors.orange,
+                        color: cumple ? AppColors.cumplido : AppColors.pendiente,
                       ),
                       const SizedBox(width: 10),
                       Text(

@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../models/registro.dart';
 import '../../services/reports_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/time_utils.dart';
 
 class DailyReportTab extends StatelessWidget {
@@ -69,8 +70,10 @@ class DailyReportTab extends StatelessWidget {
                                 ? Icons.remove_circle_outline
                                 : Icons.error_outline),
                         color: s.cumplida
-                            ? Colors.green
-                            : (s.sinRegistro ? Colors.grey : Colors.orange),
+                            ? AppColors.cumplido
+                            : (s.sinRegistro
+                                ? AppColors.neutro
+                                : AppColors.pendiente),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -100,10 +103,10 @@ class DailyReportTab extends StatelessWidget {
                                     s.diferenciaMinutos),
                         style: TextStyle(
                           color: s.sinRegistro
-                              ? Colors.grey
+                              ? AppColors.neutro
                               : (s.diferenciaMinutos >= 0
-                                  ? Colors.green
-                                  : Colors.redAccent),
+                                  ? AppColors.cumplido
+                                  : AppColors.rojo),
                           fontWeight: FontWeight.w600,
                         ),
                       ),
