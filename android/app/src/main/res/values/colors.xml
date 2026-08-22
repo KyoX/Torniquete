@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#091238</color>
+
+    <!-- Paleta del widget de inicio, tomada de AppColors (lib/theme). -->
+    <color name="widget_fondo">#0D3C7E</color>
+    <color name="widget_texto">#FFFFFF</color>
+    <color name="widget_texto_suave">#B9C6DC</color>
+    <color name="widget_acento">#F5A623</color>
+    <color name="widget_pista">#1B5AAE</color>
 </resources>

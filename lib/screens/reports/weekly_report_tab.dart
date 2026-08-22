@@ -71,6 +71,13 @@ class WeeklyReportTab extends StatelessWidget {
                     '(no cuentan)',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                if (s.diasJustificados > 0)
+                  Text(
+                    '${s.diasJustificados} '
+                    '${s.diasJustificados == 1 ? 'día justificado' : 'días justificados'} '
+                    '(festivo, vacaciones, incapacidad o permiso)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),

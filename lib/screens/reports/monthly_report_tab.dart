@@ -71,6 +71,13 @@ class MonthlyReportTab extends StatelessWidget {
                     '(no cuentan)',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                if (m.diasJustificados > 0)
+                  Text(
+                    '${m.diasJustificados} '
+                    '${m.diasJustificados == 1 ? 'día justificado' : 'días justificados'} '
+                    '(festivo, vacaciones, incapacidad o permiso)',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),

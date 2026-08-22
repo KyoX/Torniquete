@@ -129,6 +129,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(_cargarHistorial);
   }
 
+  /// Línea de resumen del día: cuánto se trabajó y contra qué meta, o por
+  /// qué ese día no pide horas.
+  String _resumenHoras(
+    Registro r,
+    int minutos,
+    bool justificado,
+    bool sinRegistro,
+  ) {
+    if (justificado) {
+      return minutos > 0
+          ? '${TimeUtils.formatDurationMinutes(minutos)} trabajados, '
+              'todo como tiempo extra'
+          : 'Sin meta de horas';
+    }
+    if (sinRegistro) return 'Sin horas registradas';
+    return '${TimeUtils.formatDurationMinutes(minutos)} '
+        'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,8 +176,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
             itemBuilder: (context, index) {
               final r = registros[index];
               final minutos = ReportsService.minutosTrabajados(r);
-              final sinRegistro = minutos <= 0;
-              final cumplida = !sinRegistro && minutos >= r.metaMinutos;
+              final justificado = r.tipoDia.esJustificado;
+              // Un festivo o unas vacaciones no son un día "sin registrar":
+              // no falta nada por marcar en ellos.
+              final sinRegistro = !justificado && minutos <= 0;
+              final cumplida = justificado ||
+                  (!sinRegistro && minutos >= r.metaEfectivaMinutos);
               return Card(
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -179,16 +202,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               ),
                             ),
                             Icon(
-                              cumplida
-                                  ? Icons.check_circle
-                                  : (sinRegistro
-                                      ? Icons.remove_circle_outline
-                                      : Icons.error_outline),
-                              color: cumplida
-                                  ? AppColors.cumplido
-                                  : (sinRegistro
-                                      ? AppColors.neutro
-                                      : AppColors.pendiente),
+                              justificado
+                                  ? Icons.event_available
+                                  : (cumplida
+                                      ? Icons.check_circle
+                                      : (sinRegistro
+                                          ? Icons.remove_circle_outline
+                                          : Icons.error_outline)),
+                              color: justificado
+                                  ? AppColors.neutro
+                                  : (cumplida
+                                      ? AppColors.cumplido
+                                      : (sinRegistro
+                                          ? AppColors.neutro
+                                          : AppColors.pendiente)),
                             ),
                             IconButton(
                               tooltip: 'Editar día',
@@ -202,6 +229,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                           ],
                         ),
+                        if (justificado || (r.nota?.isNotEmpty ?? false)) ...[
+                          const SizedBox(height: 8),
+                          _EtiquetaDia(registro: r),
+                        ],
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 16,
@@ -215,10 +246,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          sinRegistro
-                              ? 'Sin horas registradas'
-                              : '${TimeUtils.formatDurationMinutes(minutos)} '
-                                  'de ${TimeUtils.formatDurationMinutes(r.metaMinutos)}',
+                          _resumenHoras(r, minutos, justificado, sinRegistro),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -245,6 +273,45 @@ class _Marca extends StatelessWidget {
     return Text(
       '$label: ${TimeUtils.formatHHmm(valor)}',
       style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+}
+
+/// Distintivo del tipo de día y su nota, para reconocer de un vistazo por
+/// qué un día del historial no tiene horas.
+class _EtiquetaDia extends StatelessWidget {
+  final Registro registro;
+
+  const _EtiquetaDia({required this.registro});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final nota = registro.nota?.trim();
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (registro.tipoDia.esJustificado)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: scheme.tertiaryContainer,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              registro.tipoDia.etiqueta,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scheme.onTertiaryContainer,
+              ),
+            ),
+          ),
+        if (nota != null && nota.isNotEmpty)
+          Text(nota, style: Theme.of(context).textTheme.bodySmall),
+      ],
     );
   }
 }

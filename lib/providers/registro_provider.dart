@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/registro.dart';
+import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/prefs_service.dart';
+import '../services/reports_service.dart';
+import '../services/widget_service.dart';
+import '../utils/geo_utils.dart';
 import '../utils/time_utils.dart';
 
 enum MarcaTipo { entrada1, salida1, entrada2, salidaReal }
@@ -23,6 +27,13 @@ class RegistroProvider extends ChangeNotifier {
   /// Ubicaciones guardadas para las marcas de hoy, por tipo de marca.
   Map<String, UbicacionMarca> ubicacionesHoy = {};
 
+  /// Configuración de la sede, para comparar cada marca contra la geocerca.
+  SedeConfig sede = const SedeConfig();
+
+  /// Aviso pendiente de mostrar cuando una marca cae fuera de la sede.
+  /// La pantalla lo consume con [limpiarAvisoGeocerca].
+  String? avisoGeocerca;
+
   /// Tipos de marca cuya ubicación se está capturando en este momento.
   final Set<MarcaTipo> _capturandoUbicacion = {};
 
@@ -30,6 +41,22 @@ class RegistroProvider extends ChangeNotifier {
       _capturandoUbicacion.contains(tipo);
 
   UbicacionMarca? ubicacionDe(MarcaTipo tipo) => ubicacionesHoy[tipo.name];
+
+  /// Qué tan lejos de la sede quedó una marca. Null si la geocerca está
+  /// apagada o si esa marca no tiene ubicación guardada.
+  EvaluacionGeocerca? geocercaDe(MarcaTipo tipo) {
+    final ubicacion = ubicacionDe(tipo);
+    if (ubicacion == null) return null;
+    return LocationService.instance.evaluarSede(
+      sede,
+      latitud: ubicacion.latitud,
+      longitud: ubicacion.longitud,
+    );
+  }
+
+  /// Marca el aviso como ya mostrado. No notifica a propósito: se llama
+  /// desde un listener del propio provider y no hay nada que redibujar.
+  void limpiarAvisoGeocerca() => avisoGeocerca = null;
 
   static String fechaHoy() => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -50,6 +77,7 @@ class RegistroProvider extends ChangeNotifier {
       registroHoy = registroHoy!.copyWith(metaMinutos: metaMinutos);
     }
     ubicacionesHoy = await _db.getUbicacionesPorFecha(fecha);
+    sede = await _prefs.getSede();
     cargando = false;
     notifyListeners();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
@@ -59,6 +87,8 @@ class RegistroProvider extends ChangeNotifier {
   TimeOfDay? get salida1 => TimeUtils.parseTimeOfDay(registroHoy?.salida1);
   TimeOfDay? get entrada2 => TimeUtils.parseTimeOfDay(registroHoy?.entrada2);
   TimeOfDay? get salidaReal => TimeUtils.parseTimeOfDay(registroHoy?.salidaReal);
+
+  TipoDia get tipoDiaHoy => registroHoy?.tipoDia ?? TipoDia.normal;
 
   /// Tiempo trabajado en la mañana (Marca2 - Marca1), en minutos.
   int? get tiempoTrabajadoMananaMin {
@@ -72,7 +102,7 @@ class RegistroProvider extends ChangeNotifier {
   int? get tiempoRestanteMin {
     final trabajado = tiempoTrabajadoMananaMin;
     if (trabajado == null || registroHoy == null) return null;
-    return registroHoy!.metaMinutos - trabajado;
+    return registroHoy!.metaEfectivaMinutos - trabajado;
   }
 
   /// Hora estimada de salida = Marca3 (entrada2) + tiempo restante.
@@ -90,37 +120,33 @@ class RegistroProvider extends ChangeNotifier {
     return DateTime(now.year, now.month, now.day, t.hour, t.minute);
   }
 
-  /// Minutos trabajados hasta ahora. Si ya se confirmó la salida real, el
-  /// cálculo queda fijo (mañana + tarde real); si no, se estima en vivo con
-  /// la hora actual del dispositivo.
+  /// Minutos trabajados hasta ahora. Cada tramo (mañana y tarde) se cierra
+  /// con su marca de salida si ya existe; si no, cuenta en vivo contra la
+  /// hora actual del dispositivo. Así el progreso avanza desde la entrada
+  /// de la mañana y no se queda en cero hasta salir a almorzar.
   int get minutosTrabajadosHastaAhora {
-    int total = 0;
-    final trabajadoManana = tiempoTrabajadoMananaMin;
-    if (trabajadoManana != null && trabajadoManana > 0) {
-      total += trabajadoManana;
-    }
-    final e2 = entrada2;
-    final sr = salidaReal;
-    if (e2 != null && sr != null) {
-      final trabajadoTarde = TimeUtils.toMinutes(sr) - TimeUtils.toMinutes(e2);
-      if (trabajadoTarde > 0) total += trabajadoTarde;
-    } else if (e2 != null) {
-      final ahora = TimeOfDay.now();
-      final restanteHoy = TimeUtils.toMinutes(ahora) - TimeUtils.toMinutes(e2);
-      if (restanteHoy > 0) total += restanteHoy;
-    }
-    return total;
+    final registro = registroHoy;
+    if (registro == null) return 0;
+    return ReportsService.minutosEnVivo(
+      registro,
+      TimeUtils.toMinutes(TimeOfDay.now()),
+    );
   }
 
   double get progreso {
-    final meta = registroHoy?.metaMinutos ?? 1;
-    if (meta <= 0) return 0;
-    final valor = minutosTrabajadosHastaAhora / meta;
-    return valor.clamp(0.0, 1.0);
+    final meta = registroHoy?.metaEfectivaMinutos ?? 0;
+    // Un día justificado no pide horas: si se trabajó algo, todo es extra y
+    // la barra se muestra llena en vez de clavada en cero.
+    if (meta <= 0) return minutosTrabajadosHastaAhora > 0 ? 1.0 : 0.0;
+    return (minutosTrabajadosHastaAhora / meta).clamp(0.0, 1.0);
   }
 
-  bool get metaCumplida =>
-      registroHoy != null && minutosTrabajadosHastaAhora >= registroHoy!.metaMinutos;
+  bool get metaCumplida {
+    final registro = registroHoy;
+    if (registro == null) return false;
+    if (registro.tipoDia.esJustificado) return true;
+    return minutosTrabajadosHastaAhora >= registro.metaEfectivaMinutos;
+  }
 
   Future<void> marcar(MarcaTipo tipo, {required String nombreUsuario}) async {
     await _setMarca(tipo, TimeOfDay.now(), nombreUsuario: nombreUsuario);
@@ -139,6 +165,23 @@ class RegistroProvider extends ChangeNotifier {
     required String nombreUsuario,
   }) async {
     await _setMarca(tipo, hora, nombreUsuario: nombreUsuario, manual: true);
+  }
+
+  /// Marca hoy como festivo, vacaciones, incapacidad o permiso. El día deja
+  /// de exigir meta, así que también se cancela el aviso de salida.
+  Future<void> cambiarTipoDia(
+    TipoDia tipo, {
+    String? nota,
+    required String nombreUsuario,
+  }) async {
+    if (registroHoy == null) return;
+    registroHoy = registroHoy!.copyWith(
+      tipoDia: tipo,
+      nota: nota,
+      clearNota: nota == null || nota.trim().isEmpty,
+    );
+    notifyListeners();
+    await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
   }
 
   Future<void> _setMarca(
@@ -196,10 +239,36 @@ class RegistroProvider extends ChangeNotifier {
       );
       await _db.guardarUbicacion(ubicacion);
       ubicacionesHoy = {...ubicacionesHoy, tipo.name: ubicacion};
+      _revisarGeocerca(ubicacion, manual: manual);
     } finally {
       _capturandoUbicacion.remove(tipo);
       notifyListeners();
     }
+  }
+
+  /// Compara la marca recién guardada contra la geocerca de la sede y prepara
+  /// el aviso si quedó fuera.
+  ///
+  /// Es solo un aviso: la marca se guarda igual. La app no sabe si el usuario
+  /// está en una sede distinta, en una visita a cliente o si el GPS se
+  /// equivocó, así que no le corresponde bloquear nada.
+  void _revisarGeocerca(UbicacionMarca ubicacion, {required bool manual}) {
+    final evaluacion = LocationService.instance.evaluarSede(
+      sede,
+      latitud: ubicacion.latitud,
+      longitud: ubicacion.longitud,
+    );
+    if (evaluacion == null || evaluacion.dentro) {
+      avisoGeocerca = null;
+      return;
+    }
+    final donde = sede.nombre?.trim().isNotEmpty == true
+        ? sede.nombre!.trim()
+        : 'la sede';
+    avisoGeocerca = manual
+        ? 'Marca registrada a ${evaluacion.distanciaLegible} de $donde '
+            '(la ubicación es la de ahora, no la de la hora que escribiste).'
+        : 'Marca registrada a ${evaluacion.distanciaLegible} de $donde.';
   }
 
   Future<void> _recalcularYProgramar({String? nombreParaNotificacion}) async {
@@ -210,7 +279,11 @@ class RegistroProvider extends ChangeNotifier {
     await _db.guardarRegistro(registroHoy!);
     notifyListeners();
 
-    if (salidaReal != null) {
+    await _actualizarWidget();
+    await _reprogramarRecordatoriosDeMarca();
+
+    // En un día justificado no hay meta que cumplir ni salida que anunciar.
+    if (salidaReal != null || registroHoy!.tipoDia.esJustificado) {
       await NotificationService.instance.cancelarRecordatorioSalida();
       return;
     }
@@ -223,6 +296,48 @@ class RegistroProvider extends ChangeNotifier {
       );
     } else if (salida == null) {
       await NotificationService.instance.cancelarRecordatorioSalida();
+    }
+  }
+
+  Future<void> _actualizarWidget() async {
+    await WidgetService.instance.actualizar(
+      WidgetService.resumir(
+        registro: registroHoy,
+        horaEstimadaSalida: horaEstimadaSalida,
+        ahora: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Vuelve a calcular los avisos de marca. Se rehacen en cada cambio porque
+  /// el aviso de hoy sobra en cuanto la marca correspondiente ya está hecha.
+  Future<void> _reprogramarRecordatoriosDeMarca() async {
+    final configs = await _prefs.getRecordatorios();
+    final servicio = NotificationService.instance;
+    // Un festivo o un día de vacaciones no necesita que le recuerden marcar.
+    final justificado = registroHoy?.tipoDia.esJustificado ?? false;
+
+    for (final config in configs.values) {
+      if (!config.activo) {
+        await servicio.cancelarRecordatorioMarca(config.tipo);
+        continue;
+      }
+      await servicio.programarRecordatorioMarca(
+        tipo: config.tipo,
+        minutosDelDia: config.minutos,
+        omitirHoy: justificado || _marcaYaHecha(config.tipo),
+      );
+    }
+  }
+
+  bool _marcaYaHecha(RecordatorioTipo tipo) {
+    switch (tipo) {
+      case RecordatorioTipo.entrada:
+        return registroHoy?.entrada1 != null;
+      case RecordatorioTipo.salidaAlmuerzo:
+        return registroHoy?.salida1 != null;
+      case RecordatorioTipo.regresoAlmuerzo:
+        return registroHoy?.entrada2 != null;
     }
   }
 }

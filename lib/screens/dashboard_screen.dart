@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../utils/time_utils.dart';
@@ -20,11 +23,90 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
+  /// Redibuja periódicamente mientras la app está en primer plano.
+  Timer? _reloj;
+
+  /// Se guarda la referencia para poder soltar el listener en [dispose],
+  /// donde ya no es seguro leer el contexto.
+  RegistroProvider? _registroProvider;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _cargarDatos());
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _registroProvider = context.read<RegistroProvider>()
+        ..addListener(_revisarAvisoGeocerca);
+      _cargarDatos();
+    });
+    _iniciarReloj();
+  }
+
+  @override
+  void dispose() {
+    _reloj?.cancel();
+    _registroProvider?.removeListener(_revisarAvisoGeocerca);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Muestra el aviso de que una marca quedó fuera de la sede. Solo informa:
+  /// la marca ya se guardó y no se deshace.
+  void _revisarAvisoGeocerca() {
+    final provider = _registroProvider;
+    final aviso = provider?.avisoGeocerca;
+    if (!mounted || provider == null || aviso == null) return;
+    provider.limpiarAvisoGeocerca();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(aviso),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Ajustes',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _iniciarReloj() {
+    _reloj?.cancel();
+    _reloj = Timer.periodic(const Duration(seconds: 30), (_) => _refrescar());
+  }
+
+  /// El tiempo trabajado y la hora estimada de salida se calculan contra la
+  /// hora actual del teléfono, así que hay que redibujar aunque el usuario
+  /// no toque nada.
+  void _refrescar() {
+    if (!mounted) return;
+    if (_cambioDeDia()) {
+      _cargarDatos();
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// True si el registro en memoria ya no corresponde a hoy (la app quedó
+  /// abierta o en segundo plano pasada la medianoche).
+  bool _cambioDeDia() {
+    final registro = context.read<RegistroProvider>().registroHoy;
+    return registro != null && registro.fecha != RegistroProvider.fechaHoy();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      // En segundo plano no hay nada que redibujar.
+      _reloj?.cancel();
+      return;
+    }
+    _iniciarReloj();
+    _refrescar();
   }
 
   Future<void> _cargarDatos() async {
@@ -100,17 +182,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         .format(DateTime.now()),
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
+                  const SizedBox(height: 10),
+                  _ChipTipoDia(
+                    tipo: registroProvider.tipoDiaHoy,
+                    onCambiar: (tipo) => registroProvider.cambiarTipoDia(
+                      tipo,
+                      nombreUsuario: nombre,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   ExitBanner(
                     horaSalida: registroProvider.horaEstimadaSalida,
                     metaCumplida: registroProvider.metaCumplida,
+                    tipoDia: registroProvider.tipoDiaHoy,
                   ),
                   const SizedBox(height: 16),
                   ProgressCard(
                     progreso: registroProvider.progreso,
                     minutosTrabajados:
                         registroProvider.minutosTrabajadosHastaAhora,
-                    metaMinutos: registroProvider.registroHoy?.metaMinutos ?? 0,
+                    metaMinutos:
+                        registroProvider.registroHoy?.metaEfectivaMinutos ?? 0,
                   ),
                   const SizedBox(height: 16),
                   Card(
@@ -131,6 +223,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               registroProvider.ubicacionDe(MarcaTipo.entrada1),
                           capturandoUbicacion: registroProvider
                               .capturandoUbicacion(MarcaTipo.entrada1),
+                          geocerca:
+                              registroProvider.geocercaDe(MarcaTipo.entrada1),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -148,6 +242,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               registroProvider.ubicacionDe(MarcaTipo.salida1),
                           capturandoUbicacion: registroProvider
                               .capturandoUbicacion(MarcaTipo.salida1),
+                          geocerca:
+                              registroProvider.geocercaDe(MarcaTipo.salida1),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -165,6 +261,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               registroProvider.ubicacionDe(MarcaTipo.entrada2),
                           capturandoUbicacion: registroProvider
                               .capturandoUbicacion(MarcaTipo.entrada2),
+                          geocerca:
+                              registroProvider.geocercaDe(MarcaTipo.entrada2),
                         ),
                         const Divider(height: 1),
                         MarkRow(
@@ -182,6 +280,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               registroProvider.ubicacionDe(MarcaTipo.salidaReal),
                           capturandoUbicacion: registroProvider
                               .capturandoUbicacion(MarcaTipo.salidaReal),
+                          geocerca:
+                              registroProvider.geocercaDe(MarcaTipo.salidaReal),
                         ),
                       ],
                     ),
@@ -259,6 +359,83 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// Chip con el tipo del día de hoy. Tocarlo abre la lista para marcar el día
+/// como festivo, vacaciones, incapacidad o permiso sin pasar por el
+/// historial: son cambios que uno quiere hacer justo cuando se da cuenta.
+class _ChipTipoDia extends StatelessWidget {
+  final TipoDia tipo;
+  final ValueChanged<TipoDia> onCambiar;
+
+  const _ChipTipoDia({required this.tipo, required this.onCambiar});
+
+  Future<void> _elegir(BuildContext context) async {
+    final elegido = await showModalBottomSheet<TipoDia>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Text(
+                '¿Qué día es hoy?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Text(
+                'Los días que no son normales no exigen meta de horas: no '
+                'generan déficit y lo que trabajes en ellos cuenta completo '
+                'como tiempo extra.',
+                style: TextStyle(fontSize: 13),
+              ),
+            ),
+            for (final opcion in TipoDia.values)
+              ListTile(
+                leading: Icon(
+                  opcion.exigeMeta
+                      ? Icons.work_outline
+                      : Icons.event_available_outlined,
+                ),
+                title: Text(opcion.etiqueta),
+                trailing: opcion == tipo ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(context).pop(opcion),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (elegido != null && elegido != tipo) onCambiar(elegido);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final destacado = tipo.esJustificado;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ActionChip(
+        avatar: Icon(
+          destacado ? Icons.event_available : Icons.work_outline,
+          size: 18,
+          color: destacado ? scheme.onTertiaryContainer : scheme.onSurfaceVariant,
+        ),
+        label: Text(tipo.etiqueta),
+        backgroundColor:
+            destacado ? scheme.tertiaryContainer : scheme.surfaceContainerHigh,
+        labelStyle: TextStyle(
+          color: destacado ? scheme.onTertiaryContainer : scheme.onSurface,
+          fontWeight: destacado ? FontWeight.w600 : FontWeight.normal,
+        ),
+        side: BorderSide.none,
+        onPressed: () => _elegir(context),
+      ),
     );
   }
 }

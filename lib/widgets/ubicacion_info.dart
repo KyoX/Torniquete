@@ -5,14 +5,16 @@ import 'package:intl/intl.dart';
 import '../models/ubicacion_marca.dart';
 import '../services/location_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/geo_utils.dart';
 
 /// Muestra el detalle de la ubicación guardada para una marca, con la opción
 /// de copiar las coordenadas o el enlace de mapa (útil en una auditoría).
 Future<void> mostrarUbicacionMarca(
   BuildContext context,
   UbicacionMarca ubicacion,
-  String etiqueta,
-) {
+  String etiqueta, {
+  EvaluacionGeocerca? geocerca,
+}) {
   final messenger = ScaffoldMessenger.of(context);
 
   Future<void> copiar(String texto, String aviso) async {
@@ -44,6 +46,14 @@ Future<void> mostrarUbicacionMarca(
         children: [
           _detalle('Marca', '${ubicacion.fecha} a las ${ubicacion.hora}'),
           _detalle('Coordenadas', ubicacion.coordenadas),
+          if (geocerca != null)
+            _detalle(
+              'Sede',
+              geocerca.dentro
+                  ? 'Dentro del radio (${geocerca.distanciaLegible})'
+                  : 'A ${geocerca.distanciaLegible}, fuera del radio de '
+                      '${geocerca.radioMetros} m',
+            ),
           if (ubicacion.precisionMetros != null)
             _detalle('Precisión',
                 '± ${ubicacion.precisionMetros!.toStringAsFixed(0)} m'),
@@ -114,11 +124,15 @@ class UbicacionIndicador extends StatelessWidget {
   final bool capturando;
   final String etiqueta;
 
+  /// Comparación con la geocerca de la sede, si está configurada.
+  final EvaluacionGeocerca? geocerca;
+
   const UbicacionIndicador({
     super.key,
     required this.ubicacion,
     required this.etiqueta,
     this.capturando = false,
+    this.geocerca,
   });
 
   @override
@@ -135,13 +149,27 @@ class UbicacionIndicador extends StatelessWidget {
     }
     final guardada = ubicacion;
     if (guardada == null) return const SizedBox.shrink();
+    // El alfiler cambia de color cuando la marca cayó fuera de la sede, para
+    // que se note sin tener que abrir el detalle.
+    final fuera = geocerca?.fuera ?? false;
     return IconButton(
-      tooltip: 'Ver ubicación registrada',
+      tooltip: fuera
+          ? 'Marcada a ${geocerca!.distanciaLegible} de la sede'
+          : 'Ver ubicación registrada',
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 32, height: 32),
-      icon: const Icon(Icons.place, size: 18, color: AppColors.azul),
-      onPressed: () => mostrarUbicacionMarca(context, guardada, etiqueta),
+      icon: Icon(
+        fuera ? Icons.wrong_location : Icons.place,
+        size: 18,
+        color: fuera ? AppColors.pendiente : AppColors.azul,
+      ),
+      onPressed: () => mostrarUbicacionMarca(
+        context,
+        guardada,
+        etiqueta,
+        geocerca: geocerca,
+      ),
     );
   }
 }

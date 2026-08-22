@@ -15,6 +15,9 @@ class ProgressCard extends StatelessWidget {
     required this.metaMinutos,
   });
 
+  /// Festivos, vacaciones, incapacidades y permisos no piden horas.
+  bool get _sinMeta => metaMinutos <= 0;
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -30,7 +33,9 @@ class ProgressCard extends StatelessWidget {
                   'Progreso del día',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
-                Text('${(progreso * 100).round()}%'),
+                // Sin meta no hay porcentaje que calcular: un 100% ahí no
+                // significaría nada.
+                Text(_sinMeta ? 'Sin meta' : '${(progreso * 100).round()}%'),
               ],
             ),
             const SizedBox(height: 10),
@@ -43,8 +48,11 @@ class ProgressCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${TimeUtils.formatDurationMinutes(minutosTrabajados)} de '
-              '${TimeUtils.formatDurationMinutes(metaMinutos)}',
+              _sinMeta
+                  ? '${TimeUtils.formatDurationMinutes(minutosTrabajados)} '
+                      'trabajados, todo como tiempo extra'
+                  : '${TimeUtils.formatDurationMinutes(minutosTrabajados)} de '
+                      '${TimeUtils.formatDurationMinutes(metaMinutos)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

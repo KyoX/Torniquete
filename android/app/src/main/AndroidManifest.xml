@@ -8,7 +8,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <application
-        android:label="torniquete"
+        android:label="Torniquete"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -50,6 +50,34 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
+        <!-- Widget de la pantalla de inicio: muestra el progreso del dia y la
+             hora estimada de salida sin tener que abrir la app. -->
+        <!-- exported="true" es obligatorio: el APPWIDGET_UPDATE lo envia el
+             sistema, no la app. Solo redibuja con datos locales, asi que no
+             expone nada. -->
+        <receiver
+            android:name=".TorniqueteWidgetProvider"
+            android:label="@string/widget_nombre"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_torniquete_info"/>
+        </receiver>
+        <!-- Ficha de Ajustes rapidos: muestra lo trabajado y la hora de salida
+             al desplegar la barra de notificaciones. -->
+        <service
+            android:name=".TorniqueteTileService"
+            android:label="@string/widget_nombre"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE"/>
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

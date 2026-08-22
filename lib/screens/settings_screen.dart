@@ -6,6 +6,7 @@ import '../services/db_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
+import 'settings_cards.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -110,7 +111,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 validator: _validarNumero,
               ),
               const SizedBox(height: 32),
+              const RecordatoriosCard(),
+              const SizedBox(height: 16),
               const _UbicacionCard(),
+              const SizedBox(height: 16),
+              const SedeCard(),
+              const SizedBox(height: 16),
+              const DatosCard(),
               const SizedBox(height: 16),
               const _NotificacionesCard(),
               const SizedBox(height: 32),

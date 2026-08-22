@@ -1,4 +1,6 @@
+import '../models/movimiento_banco.dart';
 import '../models/registro.dart';
+import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
 import '../utils/time_utils.dart';
 
@@ -8,14 +10,25 @@ class DailyStat {
 
   DailyStat({required this.registro, required this.minutosTrabajados});
 
-  /// Día sin horas registradas: no cuenta ni a favor ni en contra.
-  bool get sinRegistro => minutosTrabajados <= 0;
+  TipoDia get tipoDia => registro.tipoDia;
 
-  bool get cumplida => !sinRegistro && minutosTrabajados >= registro.metaMinutos;
+  /// Festivo, vacaciones, incapacidad o permiso: la ausencia está justificada
+  /// y el día no exige meta.
+  bool get justificado => registro.tipoDia.esJustificado;
 
-  /// Diferencia contra la meta. Los días sin horas registradas no restan.
-  int get diferenciaMinutos =>
-      sinRegistro ? 0 : minutosTrabajados - registro.metaMinutos;
+  /// Día laboral sin horas registradas: no cuenta ni a favor ni en contra.
+  /// Un día justificado nunca es "sin registro": no falta nada por marcar.
+  bool get sinRegistro => !justificado && minutosTrabajados <= 0;
+
+  bool get cumplida =>
+      justificado || (!sinRegistro && minutosTrabajados >= registro.metaMinutos);
+
+  /// Diferencia contra la meta. Los días sin horas registradas no restan y en
+  /// los días justificados todo lo trabajado es tiempo extra.
+  int get diferenciaMinutos {
+    if (justificado) return minutosTrabajados;
+    return sinRegistro ? 0 : minutosTrabajados - registro.metaMinutos;
+  }
 }
 
 class WeeklyStat {
@@ -26,6 +39,9 @@ class WeeklyStat {
   final int totalDias; // días con horas registradas
   final int diasSinRegistro;
 
+  /// Festivos, vacaciones, incapacidades y permisos de la semana.
+  final int diasJustificados;
+
   WeeklyStat({
     required this.semanaInicio,
     required this.totalTrabajado,
@@ -33,6 +49,7 @@ class WeeklyStat {
     required this.diasCumplidos,
     required this.totalDias,
     this.diasSinRegistro = 0,
+    this.diasJustificados = 0,
   });
 
   double get porcentaje =>
@@ -59,6 +76,9 @@ class MonthlyStat {
   final int totalDias; // días con horas registradas
   final int diasSinRegistro;
 
+  /// Festivos, vacaciones, incapacidades y permisos del mes.
+  final int diasJustificados;
+
   MonthlyStat({
     required this.yearMonth,
     required this.totalTrabajado,
@@ -66,6 +86,7 @@ class MonthlyStat {
     required this.diasCumplidos,
     required this.totalDias,
     this.diasSinRegistro = 0,
+    this.diasJustificados = 0,
   });
 
   double get porcentaje =>
@@ -106,13 +127,73 @@ class BalanceDay {
   final int diferenciaMinutos;
   final int balanceAcumuladoMinutos;
   final bool sinRegistro;
+  final TipoDia tipoDia;
 
   BalanceDay({
     required this.fecha,
     required this.diferenciaMinutos,
     required this.balanceAcumuladoMinutos,
     this.sinRegistro = false,
+    this.tipoDia = TipoDia.normal,
   });
+
+  bool get justificado => tipoDia.esJustificado;
+}
+
+/// Foto del banco de horas lista para actuar: cuánto se debe o se tiene a
+/// favor, de dónde sale ese saldo y a cuántos días de trabajo equivale.
+class EstadoBanco {
+  /// Aportado por los días registrados (extras menos déficits).
+  final int minutosDeDias;
+
+  /// Ajustes y canjes anotados a mano.
+  final int minutosDeMovimientos;
+
+  /// Meta de un día laboral típico; sirve para traducir el saldo a días.
+  final int metaDiariaMinutos;
+
+  const EstadoBanco({
+    required this.minutosDeDias,
+    required this.minutosDeMovimientos,
+    required this.metaDiariaMinutos,
+  });
+
+  int get saldoMinutos => minutosDeDias + minutosDeMovimientos;
+
+  bool get aFavor => saldoMinutos >= 0;
+
+  /// Minutos que faltan por reponer. 0 si el saldo está a favor.
+  int get deficitMinutos => saldoMinutos < 0 ? -saldoMinutos : 0;
+
+  /// A cuántos días completos de trabajo equivale el saldo. Con meta 0 no
+  /// hay conversión posible y se devuelve 0.
+  double get diasEquivalentes =>
+      metaDiariaMinutos > 0 ? saldoMinutos / metaDiariaMinutos : 0;
+}
+
+/// Cuánto hay que trabajar de más cada día para dejar el banco en cero
+/// dentro de un plazo, o cuánto se puede gastar si el saldo está a favor.
+class PlanBanco {
+  /// Días laborales de plazo elegidos por el usuario.
+  final int diasHabiles;
+
+  /// Último día laboral del plazo.
+  final DateTime fechaLimite;
+
+  /// Minutos extra por día para saldar el déficit. 0 si no hay déficit.
+  final int minutosExtraPorDia;
+
+  /// Minutos disponibles para gastar. 0 si el saldo está en rojo.
+  final int minutosDisponibles;
+
+  const PlanBanco({
+    required this.diasHabiles,
+    required this.fechaLimite,
+    required this.minutosExtraPorDia,
+    required this.minutosDisponibles,
+  });
+
+  bool get hayDeficit => minutosExtraPorDia > 0;
 }
 
 /// Funciones puras de agregación para las pantallas de reportes.
@@ -150,13 +231,59 @@ class ReportsService {
     return total;
   }
 
+  /// Minutos trabajados con los tramos aún abiertos contados en vivo contra
+  /// [minutosAhora] (minutos desde medianoche). La mañana se cierra con la
+  /// salida a almuerzo y la tarde con la salida real; mientras esas marcas
+  /// falten, el tramo sigue corriendo. Es la versión pura de lo que muestra
+  /// el dashboard del día en curso.
+  static int minutosEnVivo(Registro r, int minutosAhora) {
+    final e1 = TimeUtils.parseTimeOfDay(r.entrada1);
+    final s1 = TimeUtils.parseTimeOfDay(r.salida1);
+    final e2 = TimeUtils.parseTimeOfDay(r.entrada2);
+    final sr = TimeUtils.parseTimeOfDay(r.salidaReal);
+
+    int total = 0;
+
+    // Mañana. Mientras no haya salida a almuerzo ni regreso, el tramo sigue
+    // abierto y corre contra la hora actual. Si falta la salida a almuerzo
+    // pero ya se marcó el regreso, el tramo es inconsistente y no se computa,
+    // igual que en [minutosDesdeMarcas]: así el dashboard y los reportes
+    // nunca muestran totales distintos para el mismo día.
+    if (e1 != null) {
+      final int? fin = s1 != null
+          ? TimeUtils.toMinutes(s1)
+          : (e2 == null ? minutosAhora : null);
+      if (fin != null) {
+        final manana = fin - TimeUtils.toMinutes(e1);
+        if (manana > 0) total += manana;
+      }
+    }
+
+    // Tarde: solo cuenta una vez marcado el regreso del almuerzo.
+    if (e2 != null) {
+      final fin = sr != null ? TimeUtils.toMinutes(sr) : minutosAhora;
+      final tarde = fin - TimeUtils.toMinutes(e2);
+      if (tarde > 0) total += tarde;
+    }
+
+    return total;
+  }
+
   /// Un día "cuenta" solo si tiene horas registradas. Los días en blanco
   /// no restan contra la meta: el balance es únicamente aditivo.
   static bool tieneHoras(Registro r) => minutosTrabajados(r) > 0;
 
-  /// Diferencia del día contra su meta; 0 si el día no tiene horas registradas.
-  static int diferenciaMinutos(Registro r) =>
-      tieneHoras(r) ? minutosTrabajados(r) - r.metaMinutos : 0;
+  /// Meta que el día exige de verdad: cero en festivos, vacaciones,
+  /// incapacidades y permisos.
+  static int metaEfectiva(Registro r) => r.metaEfectivaMinutos;
+
+  /// Diferencia del día contra su meta. Un día laboral sin horas registradas
+  /// da 0 (no genera déficit); en un día justificado la meta es cero, así que
+  /// todo lo que se haya trabajado cuenta como tiempo extra.
+  static int diferenciaMinutos(Registro r) {
+    if (r.tipoDia.esJustificado) return minutosTrabajados(r);
+    return tieneHoras(r) ? minutosTrabajados(r) - r.metaMinutos : 0;
+  }
 
   static List<DailyStat> dailyStats(List<Registro> registros) {
     final ordenados = [...registros]..sort((a, b) => b.fecha.compareTo(a.fecha));
@@ -180,11 +307,13 @@ class ReportsService {
       // Solo los días con horas registradas suman meta; los días en blanco
       // no generan déficit.
       final conHoras = registrosSemana.where(tieneHoras).toList();
+      final justificados =
+          registrosSemana.where((r) => r.tipoDia.esJustificado).length;
       final totalTrabajado =
           conHoras.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
-      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + r.metaMinutos);
+      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + metaEfectiva(r));
       final diasCumplidos = conHoras
-          .where((r) => minutosTrabajados(r) >= r.metaMinutos)
+          .where((r) => minutosTrabajados(r) >= metaEfectiva(r))
           .length;
       return WeeklyStat(
         semanaInicio: entry.key,
@@ -192,11 +321,15 @@ class ReportsService {
         totalMeta: totalMeta,
         diasCumplidos: diasCumplidos,
         totalDias: conHoras.length,
-        diasSinRegistro: registrosSemana.length - conHoras.length,
+        // Un festivo o un día de vacaciones no es un día "sin registrar".
+        diasSinRegistro: registrosSemana
+            .where((r) => !tieneHoras(r) && r.tipoDia.exigeMeta)
+            .length,
+        diasJustificados: justificados,
       );
     }).toList();
-    // Semanas donde no se registraron horas no aportan nada al reporte.
-    resultado.removeWhere((s) => s.totalDias == 0);
+    // Semanas sin horas ni días justificados no aportan nada al reporte.
+    resultado.removeWhere((s) => s.totalDias == 0 && s.diasJustificados == 0);
     resultado.sort((a, b) => b.semanaInicio.compareTo(a.semanaInicio));
     return resultado;
   }
@@ -210,11 +343,13 @@ class ReportsService {
     final resultado = porMes.entries.map((entry) {
       final registrosMes = entry.value;
       final conHoras = registrosMes.where(tieneHoras).toList();
+      final justificados =
+          registrosMes.where((r) => r.tipoDia.esJustificado).length;
       final totalTrabajado =
           conHoras.fold<int>(0, (sum, r) => sum + minutosTrabajados(r));
-      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + r.metaMinutos);
+      final totalMeta = conHoras.fold<int>(0, (sum, r) => sum + metaEfectiva(r));
       final diasCumplidos = conHoras
-          .where((r) => minutosTrabajados(r) >= r.metaMinutos)
+          .where((r) => minutosTrabajados(r) >= metaEfectiva(r))
           .length;
       return MonthlyStat(
         yearMonth: entry.key,
@@ -222,10 +357,13 @@ class ReportsService {
         totalMeta: totalMeta,
         diasCumplidos: diasCumplidos,
         totalDias: conHoras.length,
-        diasSinRegistro: registrosMes.length - conHoras.length,
+        diasSinRegistro: registrosMes
+            .where((r) => !tieneHoras(r) && r.tipoDia.exigeMeta)
+            .length,
+        diasJustificados: justificados,
       );
     }).toList();
-    resultado.removeWhere((m) => m.totalDias == 0);
+    resultado.removeWhere((m) => m.totalDias == 0 && m.diasJustificados == 0);
     resultado.sort((a, b) => b.yearMonth.compareTo(a.yearMonth));
     return resultado;
   }
@@ -243,6 +381,7 @@ class ReportsService {
         registros.where((r) => r.fecha.startsWith(yearMonth)).toList();
     final fechasConHoras =
         registrosMes.where(tieneHoras).map((r) => r.fecha).toSet();
+    final porFecha = {for (final r in registrosMes) r.fecha: r};
 
     int metaMesMinutos = 0;
     for (var dia = 1; dia <= diasEnMes; dia++) {
@@ -251,6 +390,10 @@ class ReportsService {
           fecha.weekday == DateTime.sunday) {
         continue;
       }
+      // Un festivo, una vacación o una incapacidad ya marcada no exige horas,
+      // ni siquiera si todavía no ha llegado: no debe inflar la meta del mes.
+      final registro = porFecha[_fechaKey(fecha)];
+      if (registro != null && registro.tipoDia.esJustificado) continue;
       // Los días ya pasados sin horas registradas no suman meta: no deben
       // generar déficit, el conteo es únicamente aditivo.
       final esPasado = dia < ahora.day;
@@ -294,8 +437,65 @@ class ReportsService {
         fecha: r.fecha,
         diferenciaMinutos: diferencia,
         balanceAcumuladoMinutos: acumulado,
-        sinRegistro: !tieneHoras(r),
+        sinRegistro: !tieneHoras(r) && r.tipoDia.exigeMeta,
+        tipoDia: r.tipoDia,
       );
     }).toList();
+  }
+
+  /// Suma de los ajustes y canjes anotados a mano.
+  static int saldoMovimientos(List<MovimientoBanco> movimientos) =>
+      movimientos.fold<int>(0, (sum, m) => sum + m.minutos);
+
+  /// Saldo del banco de horas separando lo que viene de los días trabajados
+  /// de lo que se anotó a mano, para poder explicarle al usuario de dónde
+  /// sale la cifra.
+  static EstadoBanco estadoBanco({
+    required List<Registro> registros,
+    required List<MovimientoBanco> movimientos,
+    required int metaDiariaMinutos,
+  }) {
+    final deDias =
+        registros.fold<int>(0, (sum, r) => sum + diferenciaMinutos(r));
+    return EstadoBanco(
+      minutosDeDias: deDias,
+      minutosDeMovimientos: saldoMovimientos(movimientos),
+      metaDiariaMinutos: metaDiariaMinutos,
+    );
+  }
+
+  /// Fecha del [diasHabiles]-ésimo día laboral posterior a [desde]. Solo
+  /// descarta sábados y domingos: los festivos concretos dependen del país y
+  /// del calendario de la empresa, así que el plazo es una guía, no una
+  /// promesa.
+  static DateTime fechaTrasDiasHabiles(DateTime desde, int diasHabiles) {
+    var fecha = DateTime(desde.year, desde.month, desde.day);
+    var restantes = diasHabiles;
+    while (restantes > 0) {
+      fecha = fecha.add(const Duration(days: 1));
+      if (fecha.weekday != DateTime.saturday &&
+          fecha.weekday != DateTime.sunday) {
+        restantes--;
+      }
+    }
+    return fecha;
+  }
+
+  /// Traduce el saldo a un plan concreto: cuántos minutos extra por día hacen
+  /// falta para llegar a cero en [diasHabiles] días laborales.
+  static PlanBanco planCompensacion({
+    required int saldoMinutos,
+    required int diasHabiles,
+    required DateTime desde,
+  }) {
+    final dias = diasHabiles < 1 ? 1 : diasHabiles;
+    final deficit = saldoMinutos < 0 ? -saldoMinutos : 0;
+    return PlanBanco(
+      diasHabiles: dias,
+      fechaLimite: fechaTrasDiasHabiles(desde, dias),
+      // Se redondea hacia arriba: quedarse corto deja el banco en rojo.
+      minutosExtraPorDia: deficit == 0 ? 0 : (deficit + dias - 1) ~/ dias,
+      minutosDisponibles: saldoMinutos > 0 ? saldoMinutos : 0,
+    );
   }
 }

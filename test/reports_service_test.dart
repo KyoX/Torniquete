@@ -1,9 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:torniquete/models/movimiento_banco.dart';
 import 'package:torniquete/models/registro.dart';
+import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/services/reports_service.dart';
 
-Registro reg(String fecha,
-    {String? e1, String? s1, String? e2, String? sr, int meta = 510}) {
+Registro reg(
+  String fecha, {
+  String? e1,
+  String? s1,
+  String? e2,
+  String? sr,
+  int meta = 510,
+  TipoDia tipo = TipoDia.normal,
+}) {
   return Registro(
     fecha: fecha,
     entrada1: e1,
@@ -11,6 +20,17 @@ Registro reg(String fecha,
     entrada2: e2,
     salidaReal: sr,
     metaMinutos: meta,
+    tipoDia: tipo,
+  );
+}
+
+MovimientoBanco mov(String fecha, int minutos,
+    {MotivoMovimiento motivo = MotivoMovimiento.canje}) {
+  return MovimientoBanco(
+    fecha: fecha,
+    minutos: minutos,
+    motivo: motivo,
+    creadoEn: DateTime.parse('2026-08-21T10:00:00'),
   );
 }
 
@@ -43,5 +63,164 @@ void main() {
     expect(mes.diasSinRegistro, 2);
     expect(mes.totalMeta, 510 * 2);
     expect(mes.totalTrabajado, 480 + 540);
+  });
+
+  group('minutosEnVivo', () {
+    const nueve = 9 * 60;
+    const once = 11 * 60;
+    const dosPm = 14 * 60;
+
+    test('la mañana cuenta en vivo desde la entrada', () {
+      final hoy = reg('2026-08-21', e1: '08:00');
+      expect(ReportsService.minutosEnVivo(hoy, nueve), 60);
+      expect(ReportsService.minutosEnVivo(hoy, once), 180);
+    });
+
+    test('la mañana se congela al marcar la salida a almuerzo', () {
+      final hoy = reg('2026-08-21', e1: '08:00', s1: '12:00');
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 240);
+    });
+
+    test('el almuerzo no cuenta como trabajado', () {
+      final hoy = reg('2026-08-21', e1: '08:00', s1: '12:00', e2: '13:00');
+      // 4h de la mañana + 1h de tarde a las 14:00.
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 300);
+    });
+
+    test('una mañana sin salida a almuerzo no se computa', () {
+      // Estado inconsistente (solo alcanzable editando a mano): se cuenta la
+      // tarde, igual que hacen el historial y los reportes.
+      final hoy = reg('2026-08-21', e1: '08:00', e2: '13:00');
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 60);
+      expect(ReportsService.minutosDesdeMarcas(hoy), 0);
+    });
+
+    test('con salida real el total ya no depende de la hora actual', () {
+      final hoy =
+          reg('2026-08-21', e1: '08:00', s1: '12:00', e2: '13:00', sr: '17:00');
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 480);
+      expect(ReportsService.minutosEnVivo(hoy, 23 * 60), 480);
+    });
+
+    test('un día sin marcas no acumula nada', () {
+      expect(ReportsService.minutosEnVivo(reg('2026-08-21'), dosPm), 0);
+    });
+  });
+
+  group('tipos de día', () {
+    test('un festivo trabajado suma todo como tiempo extra', () {
+      final festivo = reg('2026-08-17',
+          e1: '08:00', s1: '12:00', e2: '13:00', sr: '16:00',
+          tipo: TipoDia.festivo);
+      // 7h trabajadas contra una meta de cero: las 7h son extra.
+      expect(ReportsService.metaEfectiva(festivo), 0);
+      expect(ReportsService.diferenciaMinutos(festivo), 420);
+    });
+
+    test('un día de vacaciones sin marcas no resta nada', () {
+      final vacaciones = reg('2026-08-17', tipo: TipoDia.vacaciones);
+      expect(ReportsService.diferenciaMinutos(vacaciones), 0);
+      expect(ReportsService.metaEfectiva(vacaciones), 0);
+    });
+
+    test('una incapacidad no cuenta como día sin registrar', () {
+      final mes = ReportsService.monthlyStats([
+        reg('2026-08-14', e1: '08:00', s1: '12:00', e2: '13:00', sr: '17:00'),
+        reg('2026-08-17', tipo: TipoDia.incapacidad),
+        reg('2026-08-18'),
+      ]).single;
+      expect(mes.diasJustificados, 1);
+      // Solo el 18, que es un día laboral en blanco.
+      expect(mes.diasSinRegistro, 1);
+      // La meta del mes solo la pone el día trabajado.
+      expect(mes.totalMeta, 510);
+    });
+
+    test('un mes que solo tiene días justificados sigue apareciendo', () {
+      final meses = ReportsService.monthlyStats([
+        reg('2026-12-25', tipo: TipoDia.festivo),
+      ]);
+      expect(meses, hasLength(1));
+      expect(meses.single.diasJustificados, 1);
+      expect(meses.single.totalMeta, 0);
+    });
+
+    test('el permiso aparece marcado en el balance', () {
+      final balance = ReportsService.balanceHistorico([
+        reg('2026-08-17', tipo: TipoDia.permiso),
+      ]).single;
+      expect(balance.justificado, isTrue);
+      // Un día justificado no es un día "sin registrar": no falta nada.
+      expect(balance.sinRegistro, isFalse);
+      expect(balance.diferenciaMinutos, 0);
+    });
+  });
+
+  group('banco de horas', () {
+    final dias = [
+      // -30 minutos
+      reg('2026-08-14', e1: '08:00', s1: '12:00', e2: '13:00', sr: '17:00'),
+      // +30 minutos
+      reg('2026-08-18', e1: '08:00', s1: '12:00', e2: '13:00', sr: '18:00'),
+    ];
+
+    test('el saldo suma los días y los movimientos anotados', () {
+      final estado = ReportsService.estadoBanco(
+        registros: dias,
+        movimientos: [mov('2026-08-19', -120)],
+        metaDiariaMinutos: 510,
+      );
+      expect(estado.minutosDeDias, 0);
+      expect(estado.minutosDeMovimientos, -120);
+      expect(estado.saldoMinutos, -120);
+      expect(estado.aFavor, isFalse);
+      expect(estado.deficitMinutos, 120);
+    });
+
+    test('el saldo a favor se traduce a días de compensatorio', () {
+      final estado = ReportsService.estadoBanco(
+        registros: dias,
+        movimientos: [mov('2026-08-19', 510, motivo: MotivoMovimiento.ajuste)],
+        metaDiariaMinutos: 510,
+      );
+      expect(estado.saldoMinutos, 510);
+      expect(estado.diasEquivalentes, 1.0);
+    });
+
+    test('el déficit se reparte redondeando hacia arriba', () {
+      // 100 minutos en 3 días son 33,3: si se redondeara hacia abajo el
+      // banco quedaría en rojo al terminar el plazo.
+      final plan = ReportsService.planCompensacion(
+        saldoMinutos: -100,
+        diasHabiles: 3,
+        desde: DateTime.parse('2026-08-21'),
+      );
+      expect(plan.minutosExtraPorDia, 34);
+      expect(plan.hayDeficit, isTrue);
+      expect(plan.minutosDisponibles, 0);
+    });
+
+    test('sin déficit el plan solo reporta lo disponible', () {
+      final plan = ReportsService.planCompensacion(
+        saldoMinutos: 240,
+        diasHabiles: 5,
+        desde: DateTime.parse('2026-08-21'),
+      );
+      expect(plan.hayDeficit, isFalse);
+      expect(plan.minutosExtraPorDia, 0);
+      expect(plan.minutosDisponibles, 240);
+    });
+
+    test('el plazo salta los fines de semana', () {
+      // El 21 de agosto de 2026 es viernes: el primer día laboral es el
+      // lunes 24 y el quinto, el viernes 28.
+      final viernes = DateTime.parse('2026-08-21');
+      expect(ReportsService.fechaTrasDiasHabiles(viernes, 1),
+          DateTime(2026, 8, 24));
+      expect(ReportsService.fechaTrasDiasHabiles(viernes, 5),
+          DateTime(2026, 8, 28));
+      expect(ReportsService.fechaTrasDiasHabiles(viernes, 6),
+          DateTime(2026, 8, 31));
+    });
   });
 }

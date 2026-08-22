@@ -1,3 +1,5 @@
+import 'tipo_dia.dart';
+
 class Registro {
   final int? id;
   final String fecha; // YYYY-MM-DD
@@ -8,6 +10,12 @@ class Registro {
   final int metaMinutos; // meta del día en minutos
   final int minutosCumplidos; // minutos trabajados acumulados (columna horas_cumplidas)
 
+  /// Festivo, vacaciones, incapacidad o permiso eximen de la meta del día.
+  final TipoDia tipoDia;
+
+  /// Aclaración libre del día ("Festivo de la Independencia", "Cita médica").
+  final String? nota;
+
   const Registro({
     this.id,
     required this.fecha,
@@ -17,7 +25,13 @@ class Registro {
     this.salidaReal,
     required this.metaMinutos,
     this.minutosCumplidos = 0,
+    this.tipoDia = TipoDia.normal,
+    this.nota,
   });
+
+  /// Meta que este día realmente exige. Los días justificados no piden horas,
+  /// así que no restan del banco y todo lo que se trabaje en ellos es extra.
+  int get metaEfectivaMinutos => tipoDia.exigeMeta ? metaMinutos : 0;
 
   Registro copyWith({
     int? id,
@@ -28,10 +42,13 @@ class Registro {
     String? salidaReal,
     int? metaMinutos,
     int? minutosCumplidos,
+    TipoDia? tipoDia,
+    String? nota,
     bool clearEntrada1 = false,
     bool clearSalida1 = false,
     bool clearEntrada2 = false,
     bool clearSalidaReal = false,
+    bool clearNota = false,
   }) {
     return Registro(
       id: id ?? this.id,
@@ -42,6 +59,8 @@ class Registro {
       salidaReal: clearSalidaReal ? null : (salidaReal ?? this.salidaReal),
       metaMinutos: metaMinutos ?? this.metaMinutos,
       minutosCumplidos: minutosCumplidos ?? this.minutosCumplidos,
+      tipoDia: tipoDia ?? this.tipoDia,
+      nota: clearNota ? null : (nota ?? this.nota),
     );
   }
 
@@ -55,6 +74,8 @@ class Registro {
       'salida_real': salidaReal,
       'meta_minutos': metaMinutos,
       'horas_cumplidas': minutosCumplidos,
+      'tipo_dia': tipoDia.clave,
+      'nota': nota,
     };
   }
 
@@ -68,6 +89,8 @@ class Registro {
       salidaReal: map['salida_real'] as String?,
       metaMinutos: map['meta_minutos'] as int? ?? 0,
       minutosCumplidos: map['horas_cumplidas'] as int? ?? 0,
+      tipoDia: TipoDia.desdeClave(map['tipo_dia'] as String?),
+      nota: map['nota'] as String?,
     );
   }
 }

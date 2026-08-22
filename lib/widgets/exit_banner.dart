@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/tipo_dia.dart';
 import '../theme/app_theme.dart';
 import '../utils/time_utils.dart';
 
@@ -9,15 +10,21 @@ class ExitBanner extends StatelessWidget {
   final TimeOfDay? horaSalida;
   final bool metaCumplida;
 
+  /// En un festivo, unas vacaciones o una incapacidad no hay hora de salida
+  /// que calcular, así que el banner dice otra cosa.
+  final TipoDia tipoDia;
+
   const ExitBanner({
     super.key,
     required this.horaSalida,
     required this.metaCumplida,
+    this.tipoDia = TipoDia.normal,
   });
 
   @override
   Widget build(BuildContext context) {
     final tieneHora = horaSalida != null;
+    final justificado = tipoDia.esJustificado;
 
     return Container(
       width: double.infinity,
@@ -33,7 +40,9 @@ class ExitBanner extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            tieneHora ? '🎉 Hora de salida' : 'Hora de salida estimada',
+            justificado
+                ? 'Hoy no exige horas'
+                : (tieneHora ? '🎉 Hora de salida' : 'Hora de salida estimada'),
             style: const TextStyle(
               color: AppColors.blanco,
               fontWeight: FontWeight.w600,
@@ -43,20 +52,31 @@ class ExitBanner extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            tieneHora
-                ? TimeUtils.formatAmPm(horaSalida!)
-                : 'Registra tus marcas para calcularla',
+            justificado
+                ? tipoDia.etiqueta
+                : (tieneHora
+                    ? TimeUtils.formatAmPm(horaSalida!)
+                    : 'Registra tus marcas para calcularla'),
             style: TextStyle(
-              color: tieneHora ? AppColors.amarillo : AppColors.blanco,
+              color: tieneHora && !justificado
+                  ? AppColors.amarillo
+                  : AppColors.blanco,
               fontWeight: FontWeight.bold,
-              fontSize: tieneHora ? 34 : 18,
+              fontSize: tieneHora && !justificado ? 34 : 18,
             ),
           ),
-          if (metaCumplida) ...[
+          if (justificado) ...[
             const SizedBox(height: 6),
-            Text(
+            const Text(
+              'Lo que trabajes hoy cuenta completo como tiempo extra',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.blanco, fontSize: 13),
+            ),
+          ] else if (metaCumplida) ...[
+            const SizedBox(height: 6),
+            const Text(
               '✅ Meta de horas cumplida',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.blanco,
                 fontWeight: FontWeight.w500,
               ),

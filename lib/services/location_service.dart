@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../utils/geo_utils.dart';
+import 'prefs_service.dart';
+
 /// Resultado de pedirle al usuario el permiso de ubicación.
 enum PermisoUbicacion {
   concedido,
@@ -83,6 +86,23 @@ class LocationService {
       }
     }
     return false;
+  }
+
+  /// Compara unas coordenadas contra la geocerca de la sede. Devuelve null
+  /// si la vigilancia está apagada o si todavía no se guardó dónde queda.
+  EvaluacionGeocerca? evaluarSede(
+    SedeConfig sede, {
+    required double latitud,
+    required double longitud,
+  }) {
+    if (!sede.vigente) return null;
+    return GeoUtils.evaluar(
+      sedeLatitud: sede.latitud,
+      sedeLongitud: sede.longitud,
+      radioMetros: sede.radioMetros,
+      latitud: latitud,
+      longitud: longitud,
+    );
   }
 
   /// Obtiene la posición actual. Devuelve null si no hay permiso, el GPS

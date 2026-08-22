@@ -1,11 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Programa y cancela la notificación local que avisa al usuario
-/// 5 minutos antes de la hora estimada de salida.
+import '../utils/time_utils.dart';
+import 'prefs_service.dart';
+
+/// Programa y cancela las notificaciones locales de la app: el aviso de
+/// salida (5 minutos antes de la hora estimada) y los recordatorios para
+/// no olvidar marcar la entrada, la salida a almuerzo y el regreso.
 class NotificationService {
   NotificationService._internal();
   static final NotificationService instance = NotificationService._internal();
@@ -17,6 +22,42 @@ class NotificationService {
   static const String _canalDescripcion =
       'Avisa cuando falta poco para la hora de salida';
 
+  /// Canal aparte para los avisos de marca, para que el usuario pueda
+  /// silenciarlos desde Android sin perder el aviso de salida.
+  static const String _canalMarcasId = 'torniquete_marcas';
+  static const String _canalMarcasNombre = 'Recordatorios de marca';
+  static const String _canalMarcasDescripcion =
+      'Recuerda marcar la entrada, la salida a almuerzo y el regreso';
+
+  /// Cuántas citas futuras se dejan programadas por recordatorio. Dos
+  /// semanas laborales cubren de sobra cualquier racha sin abrir la app.
+  static const int ocurrenciasPorRecordatorio = 10;
+
+  /// Primer id de cada recordatorio; ocupa [ocurrenciasPorRecordatorio]
+  /// consecutivos. Los rangos van de 100 en 100 para que nunca se pisen.
+  static const Map<RecordatorioTipo, int> _idsBase = {
+    RecordatorioTipo.entrada: 2000,
+    RecordatorioTipo.salidaAlmuerzo: 2100,
+    RecordatorioTipo.regresoAlmuerzo: 2200,
+  };
+
+  /// Título y cuerpo de cada aviso. El texto explica *por qué* importa la
+  /// marca, que es lo que hace que valga la pena atenderla.
+  static const Map<RecordatorioTipo, (String, String)> _textos = {
+    RecordatorioTipo.entrada: (
+      'Marca tu entrada',
+      'Registra la entrada para que el día empiece a contar.',
+    ),
+    RecordatorioTipo.salidaAlmuerzo: (
+      'Hora de almorzar',
+      'Marca la salida a almuerzo: sin ella la mañana se sigue contando.',
+    ),
+    RecordatorioTipo.regresoAlmuerzo: (
+      'De vuelta al trabajo',
+      'Marca el regreso: es lo que fija tu hora estimada de salida.',
+    ),
+  };
+
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
 
@@ -26,17 +67,15 @@ class NotificationService {
       _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
+  /// Identificador IANA de la zona horaria detectada ("America/Bogota").
+  /// Null mientras no se haya llamado a [init].
+  String? get zonaHoraria => _zonaHoraria;
+  String? _zonaHoraria;
+
   Future<void> init() async {
     if (_initialized) return;
     tzdata.initializeTimeZones();
-    try {
-      // `timeZoneName` suele devolver una abreviatura ("COT", "-05") que no
-      // existe en la base de datos IANA; si falla, UTC sigue siendo correcto
-      // porque TZDateTime.from conserva el instante exacto.
-      tz.setLocalLocation(tz.getLocation(DateTime.now().timeZoneName));
-    } catch (_) {
-      tz.setLocalLocation(tz.UTC);
-    }
+    await _configurarZonaHoraria();
 
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -51,9 +90,37 @@ class NotificationService {
         importance: Importance.high,
       ),
     );
+    await _android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _canalMarcasId,
+        _canalMarcasNombre,
+        description: _canalMarcasDescripcion,
+        importance: Importance.high,
+      ),
+    );
     await _android?.requestNotificationsPermission();
 
     _initialized = true;
+  }
+
+  /// Fija la zona horaria local real del teléfono. Es imprescindible para
+  /// programar notificaciones a una hora del día concreta: la abreviatura que
+  /// devuelve `DateTime.timeZoneName` ("COT", "-05") no existe en la base de
+  /// datos IANA, así que leerla de ahí caía siempre al fallback.
+  Future<void> _configurarZonaHoraria() async {
+    try {
+      final zona = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(zona.identifier));
+      _zonaHoraria = zona.identifier;
+      return;
+    } catch (e) {
+      debugPrint('No se pudo leer la zona horaria del sistema: $e');
+    }
+    // Último recurso: UTC mantiene correcto el instante de los recordatorios
+    // que se calculan a partir de un DateTime local concreto, aunque las
+    // horas fijas del día (mismo reloj cada mañana) sí se desviarían.
+    tz.setLocalLocation(tz.UTC);
+    _zonaHoraria = tz.UTC.name;
   }
 
   /// True si el usuario tiene habilitadas las notificaciones de la app.
@@ -123,13 +190,15 @@ class NotificationService {
     required DateTime cuando,
     required String titulo,
     required String cuerpo,
+    bool canalMarcas = false,
   }) async {
     final scheduledDate = tz.TZDateTime.from(cuando, tz.local);
-    const detalles = NotificationDetails(
+    final detalles = NotificationDetails(
       android: AndroidNotificationDetails(
-        _canalId,
-        _canalNombre,
-        channelDescription: _canalDescripcion,
+        canalMarcas ? _canalMarcasId : _canalId,
+        canalMarcas ? _canalMarcasNombre : _canalNombre,
+        channelDescription:
+            canalMarcas ? _canalMarcasDescripcion : _canalDescripcion,
         importance: Importance.high,
         priority: Priority.high,
       ),
@@ -162,5 +231,71 @@ class NotificationService {
       debugPrint('No se pudo programar la notificación: $e');
       return false;
     }
+  }
+
+  /// Cancela todas las citas pendientes de un recordatorio de marca.
+  ///
+  /// Se consulta primero qué hay agendado en vez de cancelar el rango a
+  /// ciegas: esto corre en cada marca y con los recordatorios apagados —que
+  /// es lo normal— no cuesta nada.
+  Future<void> cancelarRecordatorioMarca(RecordatorioTipo tipo) async {
+    final base = _idsBase[tipo]!;
+    final limite = base + ocurrenciasPorRecordatorio;
+    final pendientes = await _plugin.pendingNotificationRequests();
+    for (final pendiente in pendientes) {
+      if (pendiente.id >= base && pendiente.id < limite) {
+        await _plugin.cancel(pendiente.id);
+      }
+    }
+  }
+
+  /// Reprograma un recordatorio de marca.
+  ///
+  /// Android no sabe repetir "todos los días laborales saltándose el de hoy
+  /// si la marca ya está hecha", así que en vez de una alarma repetida se
+  /// dejan varias citas concretas. Cada vez que se abre la app o se registra
+  /// una marca se vuelven a calcular, y con [omitirHoy] se salta el aviso de
+  /// hoy cuando esa marca ya no hace falta.
+  ///
+  /// Devuelve cuántas citas quedaron programadas.
+  Future<int> programarRecordatorioMarca({
+    required RecordatorioTipo tipo,
+    required int minutosDelDia,
+    bool omitirHoy = false,
+    DateTime? ahora,
+  }) async {
+    await init();
+    await cancelarRecordatorioMarca(tipo);
+
+    final (titulo, cuerpo) = _textos[tipo]!;
+    final base = _idsBase[tipo]!;
+    final momentos = TimeUtils.proximasOcurrenciasHabiles(
+      ahora ?? DateTime.now(),
+      minutosDelDia,
+      ocurrenciasPorRecordatorio,
+      omitirHoy: omitirHoy,
+    );
+
+    var programadas = 0;
+    for (var i = 0; i < momentos.length; i++) {
+      final ok = await _programar(
+        id: base + i,
+        cuando: momentos[i],
+        titulo: titulo,
+        cuerpo: cuerpo,
+        canalMarcas: true,
+      );
+      if (ok) programadas++;
+    }
+    return programadas;
+  }
+
+  /// Cuántas citas de este recordatorio están pendientes ahora mismo.
+  /// Lo usa el diagnóstico de Ajustes.
+  Future<int> recordatoriosPendientes(RecordatorioTipo tipo) async {
+    final base = _idsBase[tipo]!;
+    final limite = base + ocurrenciasPorRecordatorio;
+    final pendientes = await _plugin.pendingNotificationRequests();
+    return pendientes.where((p) => p.id >= base && p.id < limite).length;
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../models/registro.dart';
+import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
 import '../services/reports_service.dart';
@@ -25,6 +26,8 @@ class _EditDayScreenState extends State<EditDayScreen> {
   TimeOfDay? _salida1;
   TimeOfDay? _entrada2;
   TimeOfDay? _salidaReal;
+  late TipoDia _tipoDia;
+  late final TextEditingController _notaController;
   bool _guardando = false;
   Map<String, UbicacionMarca> _ubicaciones = {};
 
@@ -35,7 +38,15 @@ class _EditDayScreenState extends State<EditDayScreen> {
     _salida1 = TimeUtils.parseTimeOfDay(widget.registro.salida1);
     _entrada2 = TimeUtils.parseTimeOfDay(widget.registro.entrada2);
     _salidaReal = TimeUtils.parseTimeOfDay(widget.registro.salidaReal);
+    _tipoDia = widget.registro.tipoDia;
+    _notaController = TextEditingController(text: widget.registro.nota ?? '');
     _cargarUbicaciones();
+  }
+
+  @override
+  void dispose() {
+    _notaController.dispose();
+    super.dispose();
   }
 
   Future<void> _cargarUbicaciones() async {
@@ -55,16 +66,20 @@ class _EditDayScreenState extends State<EditDayScreen> {
   }
 
   Registro get _registroActualizado {
+    final nota = _notaController.text.trim();
     return widget.registro.copyWith(
       entrada1: _entrada1 != null ? TimeUtils.formatTimeOfDay(_entrada1!) : null,
       salida1: _salida1 != null ? TimeUtils.formatTimeOfDay(_salida1!) : null,
       entrada2: _entrada2 != null ? TimeUtils.formatTimeOfDay(_entrada2!) : null,
       salidaReal:
           _salidaReal != null ? TimeUtils.formatTimeOfDay(_salidaReal!) : null,
+      tipoDia: _tipoDia,
+      nota: nota,
       clearEntrada1: _entrada1 == null,
       clearSalida1: _salida1 == null,
       clearEntrada2: _entrada2 == null,
       clearSalidaReal: _salidaReal == null,
+      clearNota: nota.isEmpty,
     );
   }
 
@@ -83,7 +98,8 @@ class _EditDayScreenState extends State<EditDayScreen> {
   Widget build(BuildContext context) {
     final preview = _registroActualizado;
     final minutosPreview = ReportsService.minutosDesdeMarcas(preview);
-    final cumple = minutosPreview >= preview.metaMinutos;
+    final metaExigida = preview.metaEfectivaMinutos;
+    final cumple = _tipoDia.esJustificado || minutosPreview >= metaExigida;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Editar día')),
@@ -149,11 +165,17 @@ class _EditDayScreenState extends State<EditDayScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          _TipoDiaSelector(
+            valor: _tipoDia,
+            notaController: _notaController,
+            onCambiar: (tipo) => setState(() => _tipoDia = tipo),
+          ),
+          const SizedBox(height: 16),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
@@ -162,12 +184,29 @@ class _EditDayScreenState extends State<EditDayScreen> {
                         color: cumple ? AppColors.cumplido : AppColors.pendiente,
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        '${TimeUtils.formatDurationMinutes(minutosPreview)} de '
-                        '${TimeUtils.formatDurationMinutes(preview.metaMinutos)}',
+                      Expanded(
+                        child: Text(
+                          metaExigida > 0
+                              ? '${TimeUtils.formatDurationMinutes(minutosPreview)} de '
+                                  '${TimeUtils.formatDurationMinutes(metaExigida)}'
+                              : '${TimeUtils.formatDurationMinutes(minutosPreview)} '
+                                  'trabajados, sin meta que cumplir',
+                        ),
                       ),
                     ],
                   ),
+                  if (_tipoDia.esJustificado) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      minutosPreview > 0
+                          ? 'Al ser ${_tipoDia.etiqueta.toLowerCase()}, las '
+                              '${TimeUtils.formatDurationMinutes(minutosPreview)} '
+                              'trabajadas cuentan completas como tiempo extra.'
+                          : 'Al ser ${_tipoDia.etiqueta.toLowerCase()}, este día '
+                              'no exige horas ni resta del banco.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -186,6 +225,79 @@ class _EditDayScreenState extends State<EditDayScreen> {
                 : const Text('Guardar cambios'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Selector del tipo de día más el campo de nota. Cambiar el tipo a algo
+/// distinto de "día normal" hace que ese día deje de exigir meta de horas.
+class _TipoDiaSelector extends StatelessWidget {
+  final TipoDia valor;
+  final TextEditingController notaController;
+  final ValueChanged<TipoDia> onCambiar;
+
+  const _TipoDiaSelector({
+    required this.valor,
+    required this.notaController,
+    required this.onCambiar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.event_note_outlined),
+                const SizedBox(width: 10),
+                Text(
+                  'Tipo de día',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final tipo in TipoDia.values)
+                  ChoiceChip(
+                    label: Text(tipo.etiqueta),
+                    selected: tipo == valor,
+                    onSelected: (elegido) {
+                      if (elegido) onCambiar(tipo);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notaController,
+              decoration: const InputDecoration(
+                labelText: 'Nota (opcional)',
+                hintText: 'Festivo de la Independencia, cita médica...',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              textCapitalization: TextCapitalization.sentences,
+              maxLength: 120,
+            ),
+            Text(
+              valor.exigeMeta
+                  ? 'Un día normal exige cumplir la meta de horas.'
+                  : 'Los días de ${valor.etiqueta.toLowerCase()} no exigen '
+                      'horas: no generan déficit y todo lo trabajado en ellos '
+                      'suma como tiempo extra.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
