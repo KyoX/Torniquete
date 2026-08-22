@@ -4,6 +4,40 @@ import 'package:home_widget/home_widget.dart';
 import '../models/registro.dart';
 import '../utils/time_utils.dart';
 
+/// Cuánto se ve el fondo de pantalla a través del widget de inicio.
+///
+/// Ninguna opción llega a ser invisible del todo: un widget no puede saber
+/// qué hay debajo, y sobre un fondo claro el texto blanco se perdería. La
+/// más transparente conserva un velo mínimo, y los textos del layout llevan
+/// sombra para sostener el resto.
+enum FondoWidget {
+  solido('solido', 'Sólido', 'El azul de la app, sin transparencia.'),
+  translucido(
+    'translucido',
+    'Translúcido',
+    'Deja ver el fondo de pantalla por detrás sin comprometer la lectura.',
+  ),
+  transparente(
+    'transparente',
+    'Transparente',
+    'Casi todo fondo de pantalla. Sobre imágenes muy claras o con mucho '
+        'detalle el texto se lee peor.',
+  );
+
+  const FondoWidget(this.clave, this.etiqueta, this.descripcion);
+
+  /// Lo que viaja hasta Kotlin. Se manda la clave y no el índice para que
+  /// reordenar el enum no le cambie el widget a nadie.
+  final String clave;
+  final String etiqueta;
+  final String descripcion;
+
+  static FondoWidget desdeClave(String? clave) => values.firstWhere(
+        (fondo) => fondo.clave == clave,
+        orElse: () => FondoWidget.solido,
+      );
+}
+
 /// Lo que se le entrega al widget de la pantalla de inicio.
 ///
 /// El tiempo trabajado no viaja ya calculado, sino partido en dos: los
@@ -171,6 +205,20 @@ class WidgetService {
       await HomeWidget.updateWidget(qualifiedAndroidName: _proveedor);
     } catch (e) {
       debugPrint('No se pudo actualizar el widget de inicio: $e');
+    }
+  }
+
+  /// Guarda el fondo elegido y repinta el widget para que se vea al momento.
+  ///
+  /// El valor se queda en las preferencias del widget, así que sobrevive a
+  /// los redibujados que hace Android por su cuenta sin que la app tenga que
+  /// reenviarlo cada vez.
+  Future<void> actualizarFondo(FondoWidget fondo) async {
+    try {
+      await HomeWidget.saveWidgetData<String>('fondo_widget', fondo.clave);
+      await HomeWidget.updateWidget(qualifiedAndroidName: _proveedor);
+    } catch (e) {
+      debugPrint('No se pudo cambiar el fondo del widget: $e');
     }
   }
 }

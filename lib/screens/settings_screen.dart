@@ -111,6 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 validator: _validarNumero,
               ),
               const SizedBox(height: 32),
+              const AparienciaCard(),
+              const SizedBox(height: 16),
               const RecordatoriosCard(),
               const SizedBox(height: 16),
               const _UbicacionCard(),
@@ -351,7 +353,7 @@ class _NotificacionesCardState extends State<_NotificacionesCard> {
           Icon(
             ok ? Icons.check_circle : Icons.error_outline,
             size: 20,
-            color: ok ? AppColors.cumplido : AppColors.pendiente,
+            color: ok ? AppColors.cumplidoDe(context) : AppColors.pendienteDe(context),
           ),
           const SizedBox(width: 10),
           Expanded(child: Text(etiqueta)),

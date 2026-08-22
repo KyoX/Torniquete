@@ -1,6 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
+import 'widget_service.dart';
 
 /// Marcas del día que la app puede recordar. Cada una tiene su hora sugerida
 /// y su propio rango de identificadores de notificación.
@@ -100,6 +102,8 @@ class PrefsService {
   static const _keySedeNombre = 'sede_nombre';
   static const _keyAsuetosActivos = 'asuetos_activos';
   static const _keySector = 'sector_laboral';
+  static const _keyModoTema = 'modo_tema';
+  static const _keyFondoWidget = 'fondo_widget';
 
   static const double defaultMetaLJ = 8.5;
   static const double defaultMetaViernes = 6.5;
@@ -211,6 +215,29 @@ class PrefsService {
   Future<void> setAsuetosActivos(bool valor) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyAsuetosActivos, valor);
+  }
+
+  /// Sigue al teléfono mientras el usuario no elija otra cosa.
+  Future<ModoTema> getModoTema() async {
+    final prefs = await SharedPreferences.getInstance();
+    return ModoTema.desdeClave(prefs.getString(_keyModoTema));
+  }
+
+  Future<void> setModoTema(ModoTema modo) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyModoTema, modo.clave);
+  }
+
+  /// El widget arranca sólido: es lo que se ve bien sobre cualquier fondo
+  /// de pantalla.
+  Future<FondoWidget> getFondoWidget() async {
+    final prefs = await SharedPreferences.getInstance();
+    return FondoWidget.desdeClave(prefs.getString(_keyFondoWidget));
+  }
+
+  Future<void> setFondoWidget(FondoWidget fondo) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyFondoWidget, fondo.clave);
   }
 
   Future<SectorLaboral> getSector() async {

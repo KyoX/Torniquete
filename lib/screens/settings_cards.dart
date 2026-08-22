@@ -8,8 +8,95 @@ import '../services/backup_service.dart';
 import '../services/db_service.dart';
 import '../services/location_service.dart';
 import '../services/prefs_service.dart';
+import '../services/widget_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
+import 'reports/export_report_sheet.dart';
+
+/// Deja elegir si la app se ve clara, oscura o como esté el teléfono, y
+/// cuánto se transparenta el widget de la pantalla de inicio.
+class AparienciaCard extends StatelessWidget {
+  const AparienciaCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final appProvider = context.watch<AppProvider>();
+    final modo = appProvider.modoTema;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.brightness_6_outlined),
+                const SizedBox(width: 10),
+                Text(
+                  'Apariencia',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'El cambio se ve al instante y se recuerda la próxima vez que '
+              'abras la app.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final opcion in ModoTema.values)
+                  ChoiceChip(
+                    label: Text(opcion.etiqueta),
+                    selected: modo == opcion,
+                    onSelected: (elegido) {
+                      if (elegido) appProvider.setModoTema(opcion);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              modo.descripcion,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const Divider(height: 28),
+            Text(
+              'Fondo del widget de inicio',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final opcion in FondoWidget.values)
+                  ChoiceChip(
+                    label: Text(opcion.etiqueta),
+                    selected: appProvider.fondoWidget == opcion,
+                    onSelected: (elegido) {
+                      if (elegido) appProvider.setFondoWidget(opcion);
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              appProvider.fondoWidget.descripcion,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Avisos para no olvidar marcar la entrada, la salida a almuerzo y el
 /// regreso. Apagados por defecto: son útiles solo si el horario es estable.
@@ -325,7 +412,8 @@ class _SedeCardState extends State<SedeCard> {
   }
 }
 
-/// Exportar el historial a CSV, hacer un respaldo completo y restaurarlo.
+/// Exportar el reporte de cumplimiento (PDF o Excel), volcar el historial a
+/// CSV, hacer un respaldo completo y restaurarlo.
 class DatosCard extends StatefulWidget {
   const DatosCard({super.key});
 
@@ -355,6 +443,26 @@ class _DatosCardState extends State<DatosCard> {
 
   Future<void> _exportarCsv() => _ejecutar(() async {
         await BackupService.instance.exportarCsv();
+      });
+
+  /// Reporte para comprobar el cumplimiento del horario ante alguien más.
+  /// Es la misma hoja que abre el botón de la pantalla de Reportes.
+  Future<void> _exportarReporte() => _ejecutar(() async {
+        final registros = await DbService.instance.getTodosLosRegistros();
+        final movimientos = await DbService.instance.getMovimientos();
+        if (!mounted) return;
+        if (registros.isEmpty && movimientos.isEmpty) {
+          _avisar('Todavía no hay marcaciones que reportar.');
+          return;
+        }
+        final app = context.read<AppProvider>();
+        await mostrarHojaExportar(
+          context,
+          registros: registros,
+          movimientos: movimientos,
+          metaDiariaMinutos: app.metaDiariaTipicaMinutos,
+          nombre: app.nombre,
+        );
       });
 
   Future<void> _respaldar() => _ejecutar(() async {
@@ -446,6 +554,12 @@ class _DatosCardState extends State<DatosCard> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
+            FilledButton.tonalIcon(
+              onPressed: _ocupado ? null : _exportarReporte,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('Exportar reporte (PDF o Excel)'),
+            ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               onPressed: _ocupado ? null : _exportarCsv,
               icon: const Icon(Icons.table_view_outlined),
@@ -465,9 +579,12 @@ class _DatosCardState extends State<DatosCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              'El CSV usa punto y coma como separador, que es lo que espera '
-              'Excel en español. El respaldo es un archivo .json que solo '
-              'entiende esta app.',
+              'El reporte es lo que se entrega cuando hay que comprobar que '
+              'se cumplió el horario: trae totales, porcentaje de '
+              'cumplimiento y el detalle día por día. El CSV es el volcado '
+              'crudo del historial, con punto y coma como separador, que es '
+              'lo que espera Excel en español. El respaldo es un archivo '
+              '.json que solo entiende esta app.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

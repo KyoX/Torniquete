@@ -5,7 +5,13 @@
 
      Las medidas son ajustadas a proposito. Un widget no hace scroll ni se
      encoge: lo que no cabe se corta sin aviso, asi que el alto declarado en
-     widget_torniquete_info.xml tiene que dar para todas estas filas. -->
+     widget_torniquete_info.xml tiene que dar para todas estas filas.
+
+     El fondo declarado aqui es solo el de arranque: el proveedor lo cambia
+     por la variante translucida o transparente segun lo que el usuario haya
+     elegido en Ajustes. Los textos llevan sombra siempre; sobre el fondo
+     solido no se nota, y es lo que los salva cuando se ve el fondo de
+     pantalla por detras. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_raiz"
     android:layout_width="match_parent"
@@ -25,6 +31,10 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
             android:textColor="@color/widget_acento"
             android:textSize="12sp"
             android:textStyle="bold"
@@ -37,6 +47,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
             android:textColor="@color/widget_texto_suave"
             android:textSize="10sp"
             android:maxLines="1" />
@@ -57,6 +71,10 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
             android:textColor="@color/widget_texto"
             android:textSize="24sp"
             android:textStyle="bold"
@@ -73,6 +91,10 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3"
             android:textColor="@color/widget_texto_suave"
             android:textSize="12sp"
             android:maxLines="1" />
@@ -93,6 +115,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
+        android:shadowColor="#99000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
         android:textColor="@color/widget_texto"
         android:textSize="12sp"
         android:maxLines="1"
@@ -103,6 +129,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
+        android:shadowColor="#99000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="3"
         android:textColor="@color/widget_texto_suave"
         android:textSize="11sp"
         android:maxLines="1"

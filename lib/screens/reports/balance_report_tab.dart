@@ -171,8 +171,8 @@ class _BalanceReportTabState extends State<BalanceReportTab> {
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: m.minutos >= 0
-                            ? AppColors.cumplido
-                            : AppColors.rojo,
+                            ? AppColors.cumplidoDe(context)
+                            : AppColors.rojoDe(context),
                       ),
                     ),
                     IconButton(
@@ -199,10 +199,10 @@ class _BalanceReportTabState extends State<BalanceReportTab> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: b.sinRegistro
-                        ? AppColors.neutro
+                        ? AppColors.neutroDe(context)
                         : (b.diferenciaMinutos >= 0
-                            ? AppColors.cumplido
-                            : AppColors.rojo),
+                            ? AppColors.cumplidoDe(context)
+                            : AppColors.rojoDe(context)),
                   ),
                 ),
               ),

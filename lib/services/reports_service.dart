@@ -197,6 +197,56 @@ class PlanBanco {
   bool get hayDeficit => minutosExtraPorDia > 0;
 }
 
+/// Totales de un periodo concreto: es lo que hay que poner delante cuando
+/// toca comprobar que el horario se cumplió. Los días laborales en blanco no
+/// suman meta (igual que en el resto de la app) y los justificados se
+/// cuentan aparte.
+class ResumenPeriodo {
+  final int totalTrabajado;
+  final int totalMeta;
+
+  /// Días con horas registradas.
+  final int diasConHoras;
+
+  final int diasCumplidos;
+
+  /// Días con horas registradas que no llegaron a su meta.
+  final int diasIncumplidos;
+
+  /// Días laborales sin ninguna marca.
+  final int diasSinRegistro;
+
+  /// Festivos, vacaciones, incapacidades y permisos del periodo.
+  final int diasJustificados;
+
+  /// Ajustes y canjes anotados a mano dentro del periodo.
+  final int minutosMovimientos;
+
+  const ResumenPeriodo({
+    required this.totalTrabajado,
+    required this.totalMeta,
+    required this.diasConHoras,
+    required this.diasCumplidos,
+    required this.diasIncumplidos,
+    required this.diasSinRegistro,
+    required this.diasJustificados,
+    required this.minutosMovimientos,
+  });
+
+  /// Sin meta que cumplir el porcentaje no significa nada: se devuelve 0
+  /// en vez de inventar un 100%.
+  double get porcentaje =>
+      totalMeta == 0 ? 0 : (totalTrabajado / totalMeta * 100);
+
+  int get diferenciaMinutos => totalTrabajado - totalMeta;
+
+  /// Lo que el periodo deja en el banco de horas, ya con los movimientos
+  /// anotados a mano.
+  int get saldoMinutos => diferenciaMinutos + minutosMovimientos;
+
+  bool get metaCumplida => diferenciaMinutos >= 0;
+}
+
 /// Funciones puras de agregación para las pantallas de reportes.
 /// No dependen de widgets ni de la base de datos directamente: reciben
 /// la lista de registros ya cargada.
@@ -449,6 +499,67 @@ class ReportsService {
         tipoDia: r.tipoDia,
       );
     }).toList();
+  }
+
+  /// Los registros cuya fecha cae dentro de [desde]-[hasta] (ambos
+  /// inclusive). Un extremo nulo deja ese lado abierto, así que sin
+  /// extremos devuelve todo el historial.
+  static List<Registro> registrosEnRango(
+    List<Registro> registros, {
+    DateTime? desde,
+    DateTime? hasta,
+  }) {
+    final inicio = desde == null ? null : _fechaKey(desde);
+    final fin = hasta == null ? null : _fechaKey(hasta);
+    final filtrados = registros.where((r) {
+      if (inicio != null && r.fecha.compareTo(inicio) < 0) return false;
+      if (fin != null && r.fecha.compareTo(fin) > 0) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+    return filtrados;
+  }
+
+  /// Igual que [registrosEnRango] pero para los movimientos del banco.
+  static List<MovimientoBanco> movimientosEnRango(
+    List<MovimientoBanco> movimientos, {
+    DateTime? desde,
+    DateTime? hasta,
+  }) {
+    final inicio = desde == null ? null : _fechaKey(desde);
+    final fin = hasta == null ? null : _fechaKey(hasta);
+    final filtrados = movimientos.where((m) {
+      if (inicio != null && m.fecha.compareTo(inicio) < 0) return false;
+      if (fin != null && m.fecha.compareTo(fin) > 0) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+    return filtrados;
+  }
+
+  /// Totales del periodo listos para exportar o enseñar.
+  static ResumenPeriodo resumenPeriodo(
+    List<Registro> registros,
+    List<MovimientoBanco> movimientos,
+  ) {
+    final conHoras = registros.where(tieneHoras).toList();
+    return ResumenPeriodo(
+      totalTrabajado:
+          conHoras.fold<int>(0, (sum, r) => sum + minutosTrabajados(r)),
+      totalMeta: conHoras.fold<int>(0, (sum, r) => sum + metaEfectiva(r)),
+      diasConHoras: conHoras.length,
+      diasCumplidos: conHoras
+          .where((r) => minutosTrabajados(r) >= metaEfectiva(r))
+          .length,
+      diasIncumplidos: conHoras
+          .where((r) => minutosTrabajados(r) < metaEfectiva(r))
+          .length,
+      diasSinRegistro:
+          registros.where((r) => !tieneHoras(r) && r.tipoDia.exigeMeta).length,
+      diasJustificados:
+          registros.where((r) => r.tipoDia.esJustificado).length,
+      minutosMovimientos: saldoMovimientos(movimientos),
+    );
   }
 
   /// Suma de los ajustes y canjes anotados a mano.

@@ -41,7 +41,7 @@ class WeeklyReportTab extends StatelessWidget {
                       '${s.porcentaje.toStringAsFixed(0)}%',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: cumplioSemana ? AppColors.cumplido : AppColors.pendiente,
+                        color: cumplioSemana ? AppColors.cumplidoDe(context) : AppColors.pendienteDe(context),
                       ),
                     ),
                   ],

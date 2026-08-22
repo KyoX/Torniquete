@@ -212,12 +212,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                           ? Icons.remove_circle_outline
                                           : Icons.error_outline)),
                               color: justificado
-                                  ? AppColors.neutro
+                                  ? AppColors.neutroDe(context)
                                   : (cumplida
-                                      ? AppColors.cumplido
+                                      ? AppColors.cumplidoDe(context)
                                       : (sinRegistro
-                                          ? AppColors.neutro
-                                          : AppColors.pendiente)),
+                                          ? AppColors.neutroDe(context)
+                                          : AppColors.pendienteDe(context))),
                             ),
                             IconButton(
                               tooltip: 'Editar día',

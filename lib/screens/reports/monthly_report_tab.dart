@@ -41,7 +41,7 @@ class MonthlyReportTab extends StatelessWidget {
                       '${m.porcentaje.toStringAsFixed(0)}%',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: cumplioMes ? AppColors.cumplido : AppColors.pendiente,
+                        color: cumplioMes ? AppColors.cumplidoDe(context) : AppColors.pendienteDe(context),
                       ),
                     ),
                   ],

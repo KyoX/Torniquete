@@ -70,10 +70,10 @@ class DailyReportTab extends StatelessWidget {
                                 ? Icons.remove_circle_outline
                                 : Icons.error_outline),
                         color: s.cumplida
-                            ? AppColors.cumplido
+                            ? AppColors.cumplidoDe(context)
                             : (s.sinRegistro
-                                ? AppColors.neutro
-                                : AppColors.pendiente),
+                                ? AppColors.neutroDe(context)
+                                : AppColors.pendienteDe(context)),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -103,10 +103,10 @@ class DailyReportTab extends StatelessWidget {
                                     s.diferenciaMinutos),
                         style: TextStyle(
                           color: s.sinRegistro
-                              ? AppColors.neutro
+                              ? AppColors.neutroDe(context)
                               : (s.diferenciaMinutos >= 0
-                                  ? AppColors.cumplido
-                                  : AppColors.rojo),
+                                  ? AppColors.cumplidoDe(context)
+                                  : AppColors.rojoDe(context)),
                           fontWeight: FontWeight.w600,
                         ),
                       ),

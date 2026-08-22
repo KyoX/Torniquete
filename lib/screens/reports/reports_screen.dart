@@ -7,6 +7,7 @@ import '../../providers/app_provider.dart';
 import '../../services/db_service.dart';
 import 'balance_report_tab.dart';
 import 'daily_report_tab.dart';
+import 'export_report_sheet.dart';
 import 'monthly_report_tab.dart';
 import 'projection_report_tab.dart';
 import 'weekly_report_tab.dart';
@@ -35,6 +36,10 @@ class ReportsScreen extends StatefulWidget {
 class _ReportsScreenState extends State<ReportsScreen> {
   late Future<_DatosReportes> _datosFuture;
 
+  /// Lo último que devolvió la base de datos, para poder exportarlo desde
+  /// el botón de la barra.
+  _DatosReportes? _ultimosDatos;
+
   @override
   void initState() {
     super.initState();
@@ -42,10 +47,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<_DatosReportes> _cargar() async {
-    return _DatosReportes(
+    final datos = _DatosReportes(
       registros: await DbService.instance.getTodosLosRegistros(),
       movimientos: await DbService.instance.getMovimientos(),
     );
+    // Se guardan aparte para que el botón de exportar de la barra los tenga
+    // a mano sin volver a leer la base de datos.
+    _ultimosDatos = datos;
+    return datos;
   }
 
   /// Vuelve a leer la base de datos tras anotar o borrar un movimiento del
@@ -54,6 +63,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final datos = await _cargar();
     if (!mounted) return;
     setState(() => _datosFuture = Future.value(datos));
+  }
+
+  /// Abre la hoja de exportación con los datos ya cargados.
+  Future<void> _exportar(_DatosReportes? datos) async {
+    if (datos == null || datos.vacio) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(datos == null
+              ? 'Todavía se están cargando los datos.'
+              : 'Aún no hay marcaciones que reportar.'),
+        ),
+      );
+      return;
+    }
+    final app = context.read<AppProvider>();
+    final ruta = await mostrarHojaExportar(
+      context,
+      registros: datos.registros,
+      movimientos: datos.movimientos,
+      metaDiariaMinutos: app.metaDiariaTipicaMinutos,
+      nombre: app.nombre,
+    );
+    if (ruta == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Reporte generado y listo para compartir.')),
+    );
   }
 
   @override
@@ -65,6 +100,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reportes'),
+          actions: [
+            IconButton(
+              tooltip: 'Exportar reporte (PDF o Excel)',
+              onPressed: () => _exportar(_ultimosDatos),
+              icon: const Icon(Icons.ios_share),
+            ),
+          ],
           bottom: const TabBar(
             isScrollable: true,
             tabs: [

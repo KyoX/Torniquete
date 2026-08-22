@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="widget_nombre">Torniquete</string>
-    <string name="widget_descripcion">Progreso del dia y hora estimada de salida.</string>
+    <string name="widget_descripcion">Progreso del día y hora estimada de salida.</string>
     <string name="widget_estado_inicial">Sin datos</string>
     <string name="widget_trabajado_inicial">--</string>
 </resources>

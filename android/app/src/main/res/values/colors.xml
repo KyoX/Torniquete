@@ -8,4 +8,12 @@
     <color name="widget_texto_suave">#B9C6DC</color>
     <color name="widget_acento">#F5A623</color>
     <color name="widget_pista">#1B5AAE</color>
+
+    <!-- Fondos alternativos del widget. El alfa va delante: B3 = 70%,
+         4D = 30%. Ninguno llega a 0 a proposito: sobre un fondo de pantalla
+         claro el texto blanco desapareceria, y un widget no puede saber que
+         hay debajo. El velo minimo mas la sombra del texto en el layout es
+         lo que mantiene legible la version mas transparente. -->
+    <color name="widget_fondo_translucido">#B30D3C7E</color>
+    <color name="widget_fondo_transparente">#4D0D3C7E</color>
 </resources>

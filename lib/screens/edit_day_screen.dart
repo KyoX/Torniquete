@@ -181,7 +181,7 @@ class _EditDayScreenState extends State<EditDayScreen> {
                     children: [
                       Icon(
                         cumple ? Icons.check_circle : Icons.remove_circle_outline,
-                        color: cumple ? AppColors.cumplido : AppColors.pendiente,
+                        color: cumple ? AppColors.cumplidoDe(context) : AppColors.pendienteDe(context),
                       ),
                       const SizedBox(width: 10),
                       Expanded(

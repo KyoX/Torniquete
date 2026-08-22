@@ -162,7 +162,7 @@ class UbicacionIndicador extends StatelessWidget {
       icon: Icon(
         fuera ? Icons.wrong_location : Icons.place,
         size: 18,
-        color: fuera ? AppColors.pendiente : AppColors.azul,
+        color: fuera ? AppColors.pendienteDe(context) : AppColors.cumplidoDe(context),
       ),
       onPressed: () => mostrarUbicacionMarca(
         context,

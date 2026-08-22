@@ -128,7 +128,7 @@ class _InfoCard extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
                 color: destacado
-                    ? (positivo ? AppColors.cumplido : AppColors.rojo)
+                    ? (positivo ? AppColors.cumplidoDe(context) : AppColors.rojoDe(context))
                     : null,
               ),
             ),

@@ -58,6 +58,14 @@ class TorniqueteWidgetProvider : HomeWidgetProvider() {
                     if (meta > 0) "de ${formatearDuracion(meta)}" else "",
                 )
                 setProgressBar(R.id.widget_progreso, 100, progreso, false)
+                // El fondo lo elige el usuario en Ajustes. setBackgroundResource
+                // y no setBackgroundColor: este ultimo sustituye el drawable por
+                // un color plano y el widget perderia las esquinas redondeadas.
+                setInt(
+                    R.id.widget_raiz,
+                    "setBackgroundResource",
+                    fondoElegido(widgetData.getString("fondo_widget", null)),
+                )
                 setTextViewText(R.id.widget_salida, widgetData.getString("salida", null) ?: "")
                 setTextViewText(R.id.widget_marcas, widgetData.getString("marcas", null) ?: "")
 
@@ -69,6 +77,17 @@ class TorniqueteWidgetProvider : HomeWidgetProvider() {
             }
             appWidgetManager.updateAppWidget(widgetId, views)
         }
+    }
+
+    /**
+     * Drawable de fondo segun la preferencia guardada desde la app. Cualquier
+     * valor desconocido —o ninguno, que es como arranca un widget recien
+     * puesto— cae en el fondo solido de siempre.
+     */
+    private fun fondoElegido(clave: String?): Int = when (clave) {
+        "translucido" -> R.drawable.widget_fondo_translucido
+        "transparente" -> R.drawable.widget_fondo_transparente
+        else -> R.drawable.widget_fondo
     }
 
     /**

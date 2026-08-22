@@ -1,5 +1,42 @@
 import 'package:flutter/material.dart';
 
+/// Cómo se ve la app. Por defecto sigue al teléfono, pero el usuario puede
+/// fijarla en claro u oscuro desde Ajustes.
+enum ModoTema {
+  sistema(
+    'sistema',
+    'Automático',
+    'Cambia sola cuando el teléfono pasa de claro a oscuro.',
+    ThemeMode.system,
+  ),
+  claro(
+    'claro',
+    'Claro',
+    'Fondo blanco siempre, aunque el teléfono esté en oscuro.',
+    ThemeMode.light,
+  ),
+  oscuro(
+    'oscuro',
+    'Oscuro',
+    'Fondo azul oscuro siempre, aunque el teléfono esté en claro.',
+    ThemeMode.dark,
+  );
+
+  const ModoTema(this.clave, this.etiqueta, this.descripcion, this.themeMode);
+
+  /// Lo que se guarda en preferencias. Se escribe la clave y no el índice
+  /// para que reordenar el enum no le cambie el tema a nadie.
+  final String clave;
+  final String etiqueta;
+  final String descripcion;
+  final ThemeMode themeMode;
+
+  static ModoTema desdeClave(String? clave) => values.firstWhere(
+        (modo) => modo.clave == clave,
+        orElse: () => ModoTema.sistema,
+      );
+}
+
 /// Paleta corporativa: el azul es el color principal; el blanco y el
 /// amarillo son los secundarios.
 class AppColors {
@@ -31,6 +68,30 @@ class AppColors {
   /// Versiones para fondos oscuros (banner azul, tema oscuro).
   static const Color cumplidoSobreAzul = amarillo;
   static const Color neutroSobreAzul = Color(0xFFB9C6DC);
+  /// Azul aclarado hasta que se lee sobre la tarjeta oscura, pero todavía
+  /// saturado: si se aclara más se confunde con el gris de [neutroSobreAzul],
+  /// y en el historial ambos aparecen uno junto al otro.
+  static const Color azulSobreOscuro = Color(0xFF5B9DF0);
+  static const Color rojoSobreOscuro = Color(0xFFFFB4AB);
+
+  /// Los estados se pintan sobre la tarjeta, y en el tema oscuro esa tarjeta
+  /// ya es azul: el azul de marca y el amarillo oscurecido se pierden ahí.
+  /// Estas versiones eligen el tono que sí se lee en el tema en uso, sin
+  /// cambiar el significado (azul cumple, amarillo advierte).
+  static Color cumplidoDe(BuildContext context) =>
+      _esOscuro(context) ? azulSobreOscuro : cumplido;
+
+  static Color pendienteDe(BuildContext context) =>
+      _esOscuro(context) ? amarillo : pendiente;
+
+  static Color neutroDe(BuildContext context) =>
+      _esOscuro(context) ? neutroSobreAzul : neutro;
+
+  static Color rojoDe(BuildContext context) =>
+      _esOscuro(context) ? rojoSobreOscuro : rojo;
+
+  static bool _esOscuro(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
 }
 
 class AppTheme {

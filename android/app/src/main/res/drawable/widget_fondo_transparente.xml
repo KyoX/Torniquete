@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Variante transparente del fondo del widget. Mismo radio que widget_fondo.xml:
+     el usuario cambia cuanto se ve el fondo de pantalla, no la forma. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_fondo_transparente" />
+    <corners android:radius="20dp" />
+</shape>

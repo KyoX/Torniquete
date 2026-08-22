@@ -67,11 +67,28 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   **canjes** (horas gastadas en un compensatorio) y los **ajustes** (saldo traído
   de antes de instalar la app, horas reconocidas por la empresa) se anotan a mano
   y el saldo distingue lo que viene de los días trabajados de lo que se anotó.
-- **Exportar y respaldar**: desde Ajustes se exporta el historial a **CSV** para
-  abrirlo en Excel, se crea un **respaldo completo en JSON** (días, ubicaciones,
-  movimientos del banco y configuración) y se restaura desde uno. Restaurar
-  reemplaza todo el contenido de la app dentro de una transacción, así que si algo
-  falla a mitad la base de datos queda como estaba.
+- **Reporte para comprobar el horario (PDF y Excel)**: cuando hay que demostrarle
+  a alguien —jefatura, recursos humanos, un cliente— que sí se cumplieron las horas,
+  el botón *Exportar* de la pantalla de Reportes (o el de Ajustes) genera un
+  documento del periodo que se elija: este mes, el mes pasado, los últimos 15 o 30
+  días, todo el historial o un rango de fechas a mano. El **PDF** trae portada con
+  el nombre y el periodo, los totales (trabajado, exigido, diferencia y porcentaje
+  de cumplimiento), el detalle día por día con las cuatro marcas y el estado de cada
+  día, y los resúmenes semanal, mensual y de movimientos del banco. El **.xlsx**
+  lleva lo mismo repartido en cinco hojas (*Resumen*, *Detalle diario*, *Semanal*,
+  *Mensual*, *Banco de horas*) con las horas en celdas **numéricas**, para que quien
+  reciba el archivo pueda sumar y filtrar por su cuenta. Ambos salen de los mismos
+  cálculos que las pantallas, así que nunca dicen cosas distintas.
+- **Tema claro u oscuro**: desde *Ajustes → Apariencia* se elige si la app se ve
+  clara, oscura o como esté el teléfono (esto último es lo que hace por defecto).
+  La elección se recuerda y se lee antes de pintar la primera pantalla, para que
+  quien use el tema oscuro no vea un destello blanco al abrir. El widget de inicio
+  no sigue este ajuste: tiene el suyo propio, más abajo.
+- **Exportar y respaldar**: desde Ajustes se exporta el historial a **CSV** —el
+  volcado crudo, fila por día— para abrirlo en Excel, se crea un **respaldo completo
+  en JSON** (días, ubicaciones, movimientos del banco y configuración) y se restaura
+  desde uno. Restaurar reemplaza todo el contenido de la app dentro de una
+  transacción, así que si algo falla a mitad la base de datos queda como estaba.
 - **Widget de inicio y ficha de Ajustes rápidos**: el widget muestra el progreso del
   día, la hora estimada de salida y las cuatro marcas sin abrir la app; la ficha de
   Ajustes rápidos muestra lo mismo al desplegar la barra de notificaciones. El tiempo
@@ -79,13 +96,18 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   que empezó el tramo abierto, y el código nativo suma los minutos corridos, así que
   la cifra no se congela entre una actualización y otra. Aun así Android no redibuja
   los widgets más de una vez cada media hora, por lo que el widget indica cuándo se
-  refrescaron los datos por última vez.
+  refrescaron los datos por última vez. Desde *Ajustes → Apariencia* se elige cuánto
+  se transparenta: **sólido**, **translúcido** o **transparente**. Ninguna opción
+  llega a ser invisible del todo y los textos llevan sombra siempre, porque un widget
+  no puede saber qué fondo de pantalla tiene debajo: sin ese velo mínimo, el texto
+  blanco desaparecería sobre una imagen clara.
 - **Historial editable**: cada día del historial se puede editar (corregir cualquiera
   de las 4 marcas) o reiniciar por completo (borra todas sus marcas). También se
   puede agregar un registro para un día pasado que no tenga marcas (por ejemplo,
   tras reiniciarlo por error).
 - **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
-  de la meta del mes y balance histórico acumulado de horas.
+  de la meta del mes y balance histórico acumulado de horas, con exportación a PDF
+  y Excel del periodo que se elija.
 - **Guardar ubicación** (opcional, desactivada por defecto): al activarla en Ajustes
   se pide el permiso de ubicación y, desde ese momento, cada marca guarda también
   las coordenadas donde se registró. Sirve como evidencia ante una auditoría de que
@@ -121,10 +143,13 @@ un tono se hace en un solo sitio.
 | Fondo / tarjetas | `#F4F6FA` / blanco |
 
 Los estados también siguen la marca: un día cumplido se marca en azul y uno
-pendiente en amarillo, en vez de verde y naranja. La app fija el tema claro
-(`ThemeMode.light` en [`lib/main.dart`](lib/main.dart)); cambiarlo a
-`ThemeMode.system` habilita la variante oscura, que mantiene los mismos
-colores sobre fondo azul noche.
+pendiente en amarillo, en vez de verde y naranja. Sobre el fondo azul noche del
+tema oscuro esos dos tonos no se leen, así que los estados se piden con
+`AppColors.cumplidoDe(context)` y sus hermanas, que devuelven la versión clara
+del mismo color cuando el tema es oscuro: el significado no cambia, solo el
+tono.
+
+La variante oscura mantiene los mismos colores sobre fondo azul noche.
 
 ## Stack
 
@@ -137,8 +162,12 @@ colores sobre fondo azul noche.
 - `geolocator` para la evidencia opcional de ubicación y la geocerca de la sede
 - `url_launcher` para abrir las coordenadas en una app de mapas
 - `home_widget` para alimentar el widget de inicio y la ficha de Ajustes rápidos
-- `share_plus` + `path_provider` para compartir el CSV y el respaldo
+- `pdf` para el reporte de cumplimiento en PDF y `excel` para el .xlsx
+- `share_plus` + `path_provider` para compartir los reportes, el CSV y el respaldo
 - `file_picker` para elegir el archivo al restaurar
+- `flutter_localizations` + `intl` para que la app y los diálogos de Material
+  (calendario, reloj, menús de texto) estén siempre en español, sin importar el
+  idioma del teléfono
 
 ## Estructura
 
@@ -147,7 +176,7 @@ lib/
   models/       # Registro, TipoDia, MovimientoBanco y UbicacionMarca
   providers/    # AppProvider (config) y RegistroProvider (estado del día)
   services/     # DB, preferencias, notificaciones, ubicación, reportes,
-                # respaldo/exportación y datos del widget
+                # exportación (PDF/Excel), respaldo y datos del widget
   screens/      # Onboarding, dashboard, historial, editar día, ajustes y reportes
   widgets/      # Componentes reutilizables del dashboard
   utils/        # Cálculos puros de tiempo, distancia geográfica y asuetos
@@ -156,7 +185,8 @@ android/app/src/main/kotlin/  # Widget de inicio y ficha de Ajustes rápidos
 
 La lógica que se puede probar sin Android vive en funciones puras
 (`ReportsService`, `TimeUtils`, `GeoUtils`, `FestivosSV`,
-`BackupService.construirCsv`, `WidgetService.resumir`), que es lo que cubren las
+`BackupService.construirCsv`, `ExportService.construirPdf` /
+`construirXlsx`, `WidgetService.resumir`), que es lo que cubren las
 pruebas de `test/`.
 
 ## Getting Started

@@ -2,12 +2,24 @@ import 'package:flutter/material.dart';
 
 import '../services/notification_service.dart';
 import '../services/prefs_service.dart';
+import '../services/widget_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
 
 /// Estado global de configuración del usuario: nombre, metas de horas,
 /// recordatorios de marca y geocerca de la sede.
 class AppProvider extends ChangeNotifier {
+  /// El tema llega ya leído desde main() para que la app no arranque en
+  /// claro y salte a oscuro un instante después.
+  AppProvider({this.modoTema = ModoTema.sistema});
+
   final PrefsService _prefsService = PrefsService();
+
+  /// Claro, oscuro o el del teléfono.
+  ModoTema modoTema;
+
+  /// Cuánto se ve el fondo de pantalla a través del widget de inicio.
+  FondoWidget fondoWidget = FondoWidget.solido;
 
   String? nombre;
   double metaLJHoras = PrefsService.defaultMetaLJ;
@@ -41,6 +53,8 @@ class AppProvider extends ChangeNotifier {
     sede = await _prefsService.getSede();
     asuetosActivos = await _prefsService.getAsuetosActivos();
     sector = await _prefsService.getSector();
+    modoTema = await _prefsService.getModoTema();
+    fondoWidget = await _prefsService.getFondoWidget();
     cargado = true;
     notifyListeners();
   }
@@ -105,6 +119,26 @@ class AppProvider extends ChangeNotifier {
     await _prefsService.setAsuetosActivos(valor);
     asuetosActivos = valor;
     notifyListeners();
+  }
+
+  Future<void> setModoTema(ModoTema valor) async {
+    if (valor == modoTema) return;
+    modoTema = valor;
+    // Se repinta ya y se guarda después: esperar al disco dejaría el ajuste
+    // sin responder durante un instante.
+    notifyListeners();
+    await _prefsService.setModoTema(valor);
+  }
+
+  /// Cambia el fondo del widget y se lo pide repintar a Android. La
+  /// preferencia se guarda dos veces a propósito: aquí para que la app la
+  /// recuerde, y en las del widget, que es de donde la lee Kotlin.
+  Future<void> setFondoWidget(FondoWidget valor) async {
+    if (valor == fondoWidget) return;
+    fondoWidget = valor;
+    notifyListeners();
+    await _prefsService.setFondoWidget(valor);
+    await WidgetService.instance.actualizarFondo(valor);
   }
 
   Future<void> setSector(SectorLaboral valor) async {
