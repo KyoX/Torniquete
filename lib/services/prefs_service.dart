@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/festivos_sv.dart';
+
 /// Marcas del día que la app puede recordar. Cada una tiene su hora sugerida
 /// y su propio rango de identificadores de notificación.
 enum RecordatorioTipo {
@@ -96,6 +98,8 @@ class PrefsService {
   static const _keySedeLon = 'sede_longitud';
   static const _keySedeRadio = 'sede_radio_m';
   static const _keySedeNombre = 'sede_nombre';
+  static const _keyAsuetosActivos = 'asuetos_activos';
+  static const _keySector = 'sector_laboral';
 
   static const double defaultMetaLJ = 8.5;
   static const double defaultMetaViernes = 6.5;
@@ -195,6 +199,28 @@ class PrefsService {
     } else {
       await prefs.setString(_keySedeNombre, nombre);
     }
+  }
+
+  /// Encendido por defecto: reconocer los asuetos de ley acierta mucho más
+  /// veces de las que se equivoca, y de todos modos solo sugiere.
+  Future<bool> getAsuetosActivos() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyAsuetosActivos) ?? true;
+  }
+
+  Future<void> setAsuetosActivos(bool valor) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAsuetosActivos, valor);
+  }
+
+  Future<SectorLaboral> getSector() async {
+    final prefs = await SharedPreferences.getInstance();
+    return SectorLaboral.desdeClave(prefs.getString(_keySector));
+  }
+
+  Future<void> setSector(SectorLaboral sector) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keySector, sector.clave);
   }
 
   /// Olvida dónde queda la sede y apaga la vigilancia.

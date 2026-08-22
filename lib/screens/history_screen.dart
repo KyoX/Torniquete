@@ -8,6 +8,7 @@ import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../services/reports_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import 'edit_day_screen.dart';
 
@@ -175,6 +176,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             separatorBuilder: (context, index) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
               final r = registros[index];
+              final asueto = context.read<AppProvider>().asuetoEnClave(r.fecha);
               final minutos = ReportsService.minutosTrabajados(r);
               final justificado = r.tipoDia.esJustificado;
               // Un festivo o unas vacaciones no son un día "sin registrar":
@@ -229,9 +231,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                             ),
                           ],
                         ),
-                        if (justificado || (r.nota?.isNotEmpty ?? false)) ...[
+                        if (justificado ||
+                            asueto != null ||
+                            (r.nota?.isNotEmpty ?? false)) ...[
                           const SizedBox(height: 8),
-                          _EtiquetaDia(registro: r),
+                          _EtiquetaDia(registro: r, asueto: asueto),
                         ],
                         const SizedBox(height: 8),
                         Wrap(
@@ -282,7 +286,10 @@ class _Marca extends StatelessWidget {
 class _EtiquetaDia extends StatelessWidget {
   final Registro registro;
 
-  const _EtiquetaDia({required this.registro});
+  /// El asueto de ley que cae ese día, si lo hay.
+  final Asueto? asueto;
+
+  const _EtiquetaDia({required this.registro, this.asueto});
 
   @override
   Widget build(BuildContext context) {
@@ -307,6 +314,20 @@ class _EtiquetaDia extends StatelessWidget {
                 fontWeight: FontWeight.w600,
                 color: scheme.onTertiaryContainer,
               ),
+            ),
+          ),
+        // El asueto solo se anuncia si el día no está ya marcado: en cuanto
+        // se marca, la etiqueta del tipo de día y la nota lo dicen mejor.
+        if (asueto != null && !registro.tipoDia.esJustificado)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              border: Border.all(color: scheme.outline),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'Asueto: ${asueto!.nombre}',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
           ),
         if (nota != null && nota.isNotEmpty)

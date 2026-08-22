@@ -117,6 +117,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 16),
               const SedeCard(),
               const SizedBox(height: 16),
+              const AsuetosCard(),
+              const SizedBox(height: 16),
               const DatosCard(),
               const SizedBox(height: 16),
               const _NotificacionesCard(),

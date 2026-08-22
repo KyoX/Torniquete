@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/notification_service.dart';
 import '../services/prefs_service.dart';
+import '../utils/festivos_sv.dart';
 
 /// Estado global de configuración del usuario: nombre, metas de horas,
 /// recordatorios de marca y geocerca de la sede.
@@ -21,6 +22,12 @@ class AppProvider extends ChangeNotifier {
   /// Dónde queda el trabajo y con qué radio de tolerancia.
   SedeConfig sede = const SedeConfig();
 
+  /// Si la app reconoce los asuetos de ley de El Salvador.
+  bool asuetosActivos = true;
+
+  /// Régimen de asuetos que aplica al usuario.
+  SectorLaboral sector = SectorLaboral.privado;
+
   bool cargado = false;
 
   Future<bool> tieneUsuarioConfigurado() => _prefsService.tieneUsuario();
@@ -32,6 +39,8 @@ class AppProvider extends ChangeNotifier {
     guardarUbicacion = await _prefsService.getGuardarUbicacion();
     recordatorios = await _prefsService.getRecordatorios();
     sede = await _prefsService.getSede();
+    asuetosActivos = await _prefsService.getAsuetosActivos();
+    sector = await _prefsService.getSector();
     cargado = true;
     notifyListeners();
   }
@@ -90,6 +99,35 @@ class AppProvider extends ChangeNotifier {
     await _prefsService.borrarSede();
     sede = await _prefsService.getSede();
     notifyListeners();
+  }
+
+  Future<void> setAsuetosActivos(bool valor) async {
+    await _prefsService.setAsuetosActivos(valor);
+    asuetosActivos = valor;
+    notifyListeners();
+  }
+
+  Future<void> setSector(SectorLaboral valor) async {
+    await _prefsService.setSector(valor);
+    sector = valor;
+    notifyListeners();
+  }
+
+  /// El sector a usar para los cálculos, o null si el usuario apagó los
+  /// asuetos automáticos. Los servicios lo reciben así para saber de una vez
+  /// si deben tener en cuenta el calendario o ignorarlo.
+  SectorLaboral? get sectorAsuetos => asuetosActivos ? sector : null;
+
+  /// El asueto que cae en [fecha], si los asuetos están activos.
+  Asueto? asuetoEn(DateTime fecha) {
+    final s = sectorAsuetos;
+    return s == null ? null : FestivosSV.enFecha(fecha, sector: s);
+  }
+
+  /// Igual que [asuetoEn] pero desde la fecha en 'yyyy-MM-dd'.
+  Asueto? asuetoEnClave(String fecha) {
+    final s = sectorAsuetos;
+    return s == null ? null : FestivosSV.enClave(fecha, sector: s);
   }
 
   /// Meta de minutos para el día de la semana indicado (1 = lunes ... 7 = domingo).

@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_provider.dart';
+import '../services/asuetos_service.dart';
 import '../services/backup_service.dart';
+import '../services/db_service.dart';
 import '../services/location_service.dart';
 import '../services/prefs_service.dart';
+import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 
 /// Avisos para no olvidar marcar la entrada, la salida a almuerzo y el
@@ -470,5 +474,216 @@ class _DatosCardState extends State<DatosCard> {
         ),
       ),
     );
+  }
+}
+
+/// Asuetos de ley de El Salvador: qué régimen aplica, si la app los reconoce
+/// y una revisión del historial ya guardado.
+class AsuetosCard extends StatefulWidget {
+  const AsuetosCard({super.key});
+
+  @override
+  State<AsuetosCard> createState() => _AsuetosCardState();
+}
+
+class _AsuetosCardState extends State<AsuetosCard> {
+  bool _revisando = false;
+
+  /// Busca en el historial los días que resultaron ser asueto y ofrece
+  /// marcarlos. Solo toca días en blanco: ver [AsuetosService.candidatos].
+  Future<void> _revisarHistorial() async {
+    final appProvider = context.read<AppProvider>();
+    final sector = appProvider.sectorAsuetos;
+    if (sector == null) return;
+
+    setState(() => _revisando = true);
+    try {
+      final registros = await DbService.instance.getTodosLosRegistros();
+      final candidatos = AsuetosService.candidatos(registros, sector);
+      if (!mounted) return;
+
+      if (candidatos.isEmpty) {
+        _avisar('No hay días en blanco que coincidan con un asueto.');
+        return;
+      }
+
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            candidatos.length == 1
+                ? 'Marcar un día como festivo'
+                : 'Marcar ${candidatos.length} días como festivo',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Estos días quedaron guardados sin horas y coinciden con '
+                  'un asueto. Al marcarlos dejarán de contar como días '
+                  'laborales en blanco.',
+                ),
+                const SizedBox(height: 12),
+                for (final c in candidatos)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${_fechaLegible(c.registro.fecha)} — ${c.asueto.nombre}',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Marcar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true) return;
+
+      final marcados = await AsuetosService.marcar(candidatos);
+      if (!mounted) return;
+      _avisar(
+        marcados == 1
+            ? 'Se marcó un día como festivo.'
+            : 'Se marcaron $marcados días como festivo.',
+      );
+    } finally {
+      if (mounted) setState(() => _revisando = false);
+    }
+  }
+
+  void _avisar(String mensaje) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appProvider = context.watch<AppProvider>();
+    final activos = appProvider.asuetosActivos;
+    final proximo = _proximoAsueto(appProvider);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.event_outlined),
+                const SizedBox(width: 10),
+                Text(
+                  'Asuetos de El Salvador',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'La app reconoce los asuetos de ley y no te exige horas en '
+              'ellos. Las fiestas patronales y los días que dé la empresa '
+              'siguen siendo manuales.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: activos,
+              onChanged: appProvider.setAsuetosActivos,
+              title: const Text('Reconocer los asuetos de ley'),
+              subtitle: Text(_resumenProximo(activos, proximo)),
+            ),
+            if (activos) ...[
+              const Divider(),
+              Text(
+                'Régimen que te aplica',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final sector in SectorLaboral.values)
+                    ChoiceChip(
+                      label: Text(sector.etiqueta),
+                      selected: appProvider.sector == sector,
+                      onSelected: (elegido) {
+                        if (elegido) appProvider.setSector(sector);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                appProvider.sector.fundamento,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                appProvider.sector == SectorLaboral.publico
+                    ? 'Incluye el 3, 5 y 6 de agosto.'
+                    : 'De las fiestas agostinas solo cuenta el 6 de agosto.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _revisando ? null : _revisarHistorial,
+                icon: _revisando
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.fact_check_outlined),
+                label: const Text('Revisar el historial'),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Busca días ya guardados que cayeron en asueto y quedaron '
+                'sin horas. No toca los días en los que sí trabajaste.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Fecha en palabras, que es como se lee un calendario.
+  static String _fechaLegible(String fecha) =>
+      DateFormat("d 'de' MMMM 'de' y", 'es').format(DateTime.parse(fecha));
+
+  /// Distingue el asueto de hoy del siguiente: decir "próximo" de un día
+  /// que es hoy se lee como si faltara.
+  String _resumenProximo(bool activos, Asueto? proximo) {
+    if (!activos || proximo == null) return 'Los asuetos no afectarán tus metas';
+    final esHoy = proximo.fecha == FestivosSV.clave(DateTime.now());
+    final cuando = esHoy ? 'Hoy' : 'Próximo';
+    return '$cuando: ${proximo.nombre}, ${_fechaLegible(proximo.fecha)}';
+  }
+
+  /// El siguiente asueto a partir de hoy, para que el ajuste diga algo útil
+  /// en vez de solo estar encendido.
+  Asueto? _proximoAsueto(AppProvider appProvider) {
+    final sector = appProvider.sectorAsuetos;
+    if (sector == null) return null;
+    final hoy = DateTime.now();
+    final proximos = FestivosSV.entre(
+      hoy,
+      DateTime(hoy.year + 1, hoy.month, hoy.day),
+      sector: sector,
+    );
+    return proximos.isEmpty ? null : proximos.first;
   }
 }

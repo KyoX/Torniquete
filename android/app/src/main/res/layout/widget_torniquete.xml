@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Widget de la pantalla de inicio. Solo se usan vistas admitidas por
      RemoteViews (LinearLayout, TextView, ProgressBar): un AppWidget no puede
-     inflar layouts arbitrarios. -->
+     inflar layouts arbitrarios.
+
+     Las medidas son ajustadas a proposito. Un widget no hace scroll ni se
+     encoge: lo que no cabe se corta sin aviso, asi que el alto declarado en
+     widget_torniquete_info.xml tiene que dar para todas estas filas. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_raiz"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_fondo"
-    android:padding="14dp">
+    android:gravity="center_vertical"
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -21,7 +26,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textColor="@color/widget_acento"
-            android:textSize="13sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end"
@@ -31,29 +36,54 @@
             android:id="@+id/widget_actualizado"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
             android:textColor="@color/widget_texto_suave"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:maxLines="1" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/widget_trabajado"
+    <!-- El total y la meta van en TextViews distintos: juntos en una sola
+         cadena a 24sp no caben en un widget de tres celdas de ancho y Android
+         los cortaba a la mitad ("6h 35m / 6h 3..."). -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:textColor="@color/widget_texto"
-        android:textSize="26sp"
-        android:textStyle="bold"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:text="@string/widget_trabajado_inicial" />
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal"
+        android:baselineAligned="true">
+
+        <TextView
+            android:id="@+id/widget_trabajado"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/widget_texto"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="14sp"
+            android:autoSizeMaxTextSize="24sp"
+            android:autoSizeStepGranularity="1sp"
+            android:text="@string/widget_trabajado_inicial" />
+
+        <TextView
+            android:id="@+id/widget_meta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:textColor="@color/widget_texto_suave"
+            android:textSize="12sp"
+            android:maxLines="1" />
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/widget_progreso"
         style="?android:attr/progressBarStyleHorizontal"
         android:layout_width="match_parent"
-        android:layout_height="10dp"
-        android:layout_marginTop="8dp"
+        android:layout_height="8dp"
+        android:layout_marginTop="6dp"
         android:max="100"
         android:progress="0"
         android:progressDrawable="@drawable/widget_progreso" />
@@ -62,9 +92,9 @@
         android:id="@+id/widget_salida"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:textColor="@color/widget_texto"
-        android:textSize="13sp"
+        android:textSize="12sp"
         android:maxLines="1"
         android:ellipsize="end" />
 
@@ -74,7 +104,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
         android:textColor="@color/widget_texto_suave"
-        android:textSize="12sp"
+        android:textSize="11sp"
         android:maxLines="1"
         android:ellipsize="end" />
 </LinearLayout>

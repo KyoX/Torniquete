@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
+import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import '../widgets/exit_banner.dart';
 import '../widgets/mark_row.dart';
@@ -31,6 +32,22 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Se guarda la referencia para poder soltar el listener en [dispose],
   /// donde ya no es seguro leer el contexto.
   RegistroProvider? _registroProvider;
+
+  /// Asueto que el usuario decidió ignorar porque hoy sí va a trabajar.
+  /// Vive solo mientras la pantalla está abierta: no es una decisión que
+  /// valga la pena persistir.
+  String? _asuetoDescartado;
+
+  /// El asueto de hoy, si toca sugerirlo.
+  ///
+  /// No se sugiere si el día ya está marcado como justificado —ya está
+  /// resuelto— ni si el usuario descartó el aviso.
+  Asueto? _asuetoDeHoy(AppProvider app, RegistroProvider registro) {
+    if (registro.tipoDiaHoy.esJustificado) return null;
+    final asueto = app.asuetoEn(DateTime.now());
+    if (asueto == null || asueto.fecha == _asuetoDescartado) return null;
+    return asueto;
+  }
 
   @override
   void initState() {
@@ -190,6 +207,20 @@ class _DashboardScreenState extends State<DashboardScreen>
                       nombreUsuario: nombre,
                     ),
                   ),
+                  if (_asuetoDeHoy(appProvider, registroProvider)
+                      case final asueto?) ...[
+                    const SizedBox(height: 12),
+                    _AvisoAsueto(
+                      asueto: asueto,
+                      onMarcar: () => registroProvider.cambiarTipoDia(
+                        TipoDia.festivo,
+                        nota: asueto.nombre,
+                        nombreUsuario: nombre,
+                      ),
+                      onDescartar: () =>
+                          setState(() => _asuetoDescartado = asueto.fecha),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   ExitBanner(
                     horaSalida: registroProvider.horaEstimadaSalida,
@@ -435,6 +466,78 @@ class _ChipTipoDia extends StatelessWidget {
         ),
         side: BorderSide.none,
         onPressed: () => _elegir(context),
+      ),
+    );
+  }
+}
+
+/// Sugiere marcar el día como festivo cuando cae un asueto de ley.
+///
+/// Es una sugerencia y no una escritura automática a propósito: hay quien
+/// trabaja los asuetos, y en ese caso las horas del día son tiempo extra,
+/// no una ausencia justificada. La app no puede saber cuál de los dos casos
+/// es sin preguntar.
+class _AvisoAsueto extends StatelessWidget {
+  final Asueto asueto;
+  final VoidCallback onMarcar;
+  final VoidCallback onDescartar;
+
+  const _AvisoAsueto({
+    required this.asueto,
+    required this.onMarcar,
+    required this.onDescartar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    return Card(
+      color: tema.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.celebration_outlined,
+                  color: tema.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Hoy es ${asueto.nombre}',
+                    style: tema.textTheme.titleSmall?.copyWith(
+                      color: tema.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Si no trabajas, márcalo como festivo y el día dejará de '
+              'exigirte horas.',
+              style: tema.textTheme.bodySmall?.copyWith(
+                color: tema.colorScheme.onSecondaryContainer,
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: onDescartar,
+                  child: const Text('Hoy trabajo'),
+                ),
+                TextButton(
+                  onPressed: onMarcar,
+                  child: const Text('Marcar festivo'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

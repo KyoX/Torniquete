@@ -51,6 +51,15 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   banco y, si se trabaja en él, todo lo trabajado cuenta como tiempo extra. Los
   reportes lo separan de los días laborales en blanco y la proyección del mes deja
   de contar su meta.
+- **Asuetos de El Salvador**: la app conoce el calendario de asuetos de ley y no te
+  exige horas en ellos. La Semana Santa se calcula a partir de la Pascua, así que el
+  calendario no hay que actualizarlo cada año. En Ajustes se elige el régimen —*sector
+  privado* (Código de Trabajo, Art. 190) o *sector público*, que suma el 3 y el 5 de
+  agosto— y se puede apagar por completo. Cuando cae un asueto el dashboard lo sugiere
+  en vez de marcarlo solo: hay quien trabaja los asuetos, y en ese caso las horas del
+  día son tiempo extra, no una ausencia. *Revisar el historial* busca días ya guardados
+  que cayeron en asueto y quedaron sin horas, sin tocar aquellos en los que sí se
+  trabajó. Las fiestas patronales y los días que dé la empresa siguen siendo manuales.
 - **Banco de horas accionable**: además del balance acumulado, la pestaña
   *Banco de horas* dice qué hacer con él. Si hay déficit, reparte las horas
   pendientes entre el plazo que elijas (5, 10, 15 o 20 días laborales) y da la
@@ -141,13 +150,14 @@ lib/
                 # respaldo/exportación y datos del widget
   screens/      # Onboarding, dashboard, historial, editar día, ajustes y reportes
   widgets/      # Componentes reutilizables del dashboard
-  utils/        # Cálculos puros de tiempo y de distancia geográfica
+  utils/        # Cálculos puros de tiempo, distancia geográfica y asuetos
 android/app/src/main/kotlin/  # Widget de inicio y ficha de Ajustes rápidos
 ```
 
 La lógica que se puede probar sin Android vive en funciones puras
-(`ReportsService`, `TimeUtils`, `GeoUtils`, `BackupService.construirCsv`,
-`WidgetService.resumir`), que es lo que cubren las pruebas de `test/`.
+(`ReportsService`, `TimeUtils`, `GeoUtils`, `FestivosSV`,
+`BackupService.construirCsv`, `WidgetService.resumir`), que es lo que cubren las
+pruebas de `test/`.
 
 ## Getting Started
 

@@ -2,6 +2,7 @@ import '../models/movimiento_banco.dart';
 import '../models/registro.dart';
 import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
+import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 
 class DailyStat {
@@ -390,6 +391,13 @@ class ReportsService {
           fecha.weekday == DateTime.sunday) {
         continue;
       }
+      // Un asueto de ley tampoco exige horas, aunque el día no esté marcado
+      // a mano: un mes con dos asuetos tiene una meta más baja y la
+      // proyección quedaría exigiendo un déficit que no existe.
+      final sector = appProvider.sectorAsuetos;
+      if (sector != null && FestivosSV.enFecha(fecha, sector: sector) != null) {
+        continue;
+      }
       // Un festivo, una vacación o una incapacidad ya marcada no exige horas,
       // ni siquiera si todavía no ha llegado: no debe inflar la meta del mes.
       final registro = porFecha[_fechaKey(fecha)];
@@ -464,19 +472,31 @@ class ReportsService {
     );
   }
 
-  /// Fecha del [diasHabiles]-ésimo día laboral posterior a [desde]. Solo
-  /// descarta sábados y domingos: los festivos concretos dependen del país y
-  /// del calendario de la empresa, así que el plazo es una guía, no una
-  /// promesa.
-  static DateTime fechaTrasDiasHabiles(DateTime desde, int diasHabiles) {
+  /// Fecha del [diasHabiles]-ésimo día laboral posterior a [desde].
+  ///
+  /// Descarta sábados y domingos siempre, y además los asuetos de ley cuando
+  /// se indica un [sector]. Sin sector el plazo es solo una guía: sigue sin
+  /// saber nada de las fiestas patronales ni del calendario de la empresa.
+  static DateTime fechaTrasDiasHabiles(
+    DateTime desde,
+    int diasHabiles, {
+    SectorLaboral? sector,
+  }) {
     var fecha = DateTime(desde.year, desde.month, desde.day);
     var restantes = diasHabiles;
-    while (restantes > 0) {
-      fecha = fecha.add(const Duration(days: 1));
-      if (fecha.weekday != DateTime.saturday &&
-          fecha.weekday != DateTime.sunday) {
-        restantes--;
+    // Tope de seguridad: aunque el calendario viniera mal, el bucle termina.
+    var vueltas = 0;
+    while (restantes > 0 && vueltas < 3650) {
+      vueltas++;
+      fecha = DateTime(fecha.year, fecha.month, fecha.day + 1);
+      if (fecha.weekday == DateTime.saturday ||
+          fecha.weekday == DateTime.sunday) {
+        continue;
       }
+      if (sector != null && FestivosSV.enFecha(fecha, sector: sector) != null) {
+        continue;
+      }
+      restantes--;
     }
     return fecha;
   }
@@ -487,12 +507,13 @@ class ReportsService {
     required int saldoMinutos,
     required int diasHabiles,
     required DateTime desde,
+    SectorLaboral? sector,
   }) {
     final dias = diasHabiles < 1 ? 1 : diasHabiles;
     final deficit = saldoMinutos < 0 ? -saldoMinutos : 0;
     return PlanBanco(
       diasHabiles: dias,
-      fechaLimite: fechaTrasDiasHabiles(desde, dias),
+      fechaLimite: fechaTrasDiasHabiles(desde, dias, sector: sector),
       // Se redondea hacia arriba: quedarse corto deja el banco en rojo.
       minutosExtraPorDia: deficit == 0 ? 0 : (deficit + dias - 1) ~/ dias,
       minutosDisponibles: saldoMinutos > 0 ? saldoMinutos : 0,

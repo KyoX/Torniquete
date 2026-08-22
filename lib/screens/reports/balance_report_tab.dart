@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../models/movimiento_banco.dart';
+import '../../providers/app_provider.dart';
 import '../../models/registro.dart';
 import '../../services/db_service.dart';
 import '../../services/reports_service.dart';
@@ -98,10 +100,14 @@ class _BalanceReportTabState extends State<BalanceReportTab> {
       movimientos: widget.movimientos,
       metaDiariaMinutos: widget.metaDiariaMinutos,
     );
+    // El plazo se cuenta sobre días en que de verdad se trabaja, así que
+    // descuenta los asuetos de ley igual que la proyección del mes.
+    final sector = context.watch<AppProvider>().sectorAsuetos;
     final plan = ReportsService.planCompensacion(
       saldoMinutos: estado.saldoMinutos,
       diasHabiles: _plazoElegido,
       desde: DateTime.now(),
+      sector: sector,
     );
     final balances = ReportsService.balanceHistorico(widget.registros);
     final ordenDesc = balances.reversed.toList();
@@ -112,6 +118,7 @@ class _BalanceReportTabState extends State<BalanceReportTab> {
         _TarjetaSaldo(estado: estado),
         const SizedBox(height: 16),
         _TarjetaPlan(
+          asuetosContados: sector != null,
           estado: estado,
           plan: plan,
           plazos: _plazos,
@@ -280,6 +287,9 @@ class _TarjetaSaldo extends StatelessWidget {
 /// Qué hacer con el saldo: repartir el déficit en un plazo, o traducir las
 /// horas a favor a días de compensatorio.
 class _TarjetaPlan extends StatelessWidget {
+  /// Si el plazo ya descontó los asuetos de ley, para no prometer de más.
+  final bool asuetosContados;
+
   final EstadoBanco estado;
   final PlanBanco plan;
   final List<int> plazos;
@@ -287,6 +297,7 @@ class _TarjetaPlan extends StatelessWidget {
   final ValueChanged<int> onPlazo;
 
   const _TarjetaPlan({
+    required this.asuetosContados,
     required this.estado,
     required this.plan,
     required this.plazos,
@@ -352,8 +363,13 @@ class _TarjetaPlan extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Text(
-                'El plazo solo descarta sábados y domingos: si en el medio '
-                'hay festivos, tendrás que repartir el tiempo en menos días.',
+                asuetosContados
+                    ? 'El plazo ya descuenta fines de semana y asuetos de '
+                        'ley. Las fiestas patronales y los días que dé la '
+                        'empresa no los conoce: márcalos y el plazo se '
+                        'recalcula.'
+                    : 'El plazo solo descarta sábados y domingos. Activa los '
+                        'asuetos en Ajustes para que también los descuente.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ] else ...[

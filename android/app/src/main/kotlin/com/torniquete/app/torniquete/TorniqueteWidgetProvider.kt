@@ -50,13 +50,12 @@ class TorniqueteWidgetProvider : HomeWidgetProvider() {
                     R.id.widget_actualizado,
                     widgetData.getString("actualizado", null)?.let { "act. $it" } ?: "",
                 )
+                setTextViewText(R.id.widget_trabajado, formatearDuracion(trabajado))
+                // La meta va en su propia vista, mas pequena: en una sola
+                // cadena a 24sp no cabe y el widget la cortaba a la mitad.
                 setTextViewText(
-                    R.id.widget_trabajado,
-                    if (meta > 0) {
-                        "${formatearDuracion(trabajado)} / ${formatearDuracion(meta)}"
-                    } else {
-                        formatearDuracion(trabajado)
-                    },
+                    R.id.widget_meta,
+                    if (meta > 0) "de ${formatearDuracion(meta)}" else "",
                 )
                 setProgressBar(R.id.widget_progreso, 100, progreso, false)
                 setTextViewText(R.id.widget_salida, widgetData.getString("salida", null) ?: "")
