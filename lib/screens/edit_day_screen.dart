@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/pausa.dart';
 import '../models/registro.dart';
 import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
+import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../services/reports_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/time_utils.dart';
 import '../widgets/mark_row.dart';
+import '../widgets/pausa_row.dart';
 
 /// Permite editar manualmente todas las marcas de un día específico del
 /// historial (por si se olvidó marcar o se cometió un error).
@@ -23,9 +26,8 @@ class EditDayScreen extends StatefulWidget {
 
 class _EditDayScreenState extends State<EditDayScreen> {
   TimeOfDay? _entrada1;
-  TimeOfDay? _salida1;
-  TimeOfDay? _entrada2;
   TimeOfDay? _salidaReal;
+  late List<Pausa> _pausas;
   late TipoDia _tipoDia;
   late final TextEditingController _notaController;
   bool _guardando = false;
@@ -35,9 +37,8 @@ class _EditDayScreenState extends State<EditDayScreen> {
   void initState() {
     super.initState();
     _entrada1 = TimeUtils.parseTimeOfDay(widget.registro.entrada1);
-    _salida1 = TimeUtils.parseTimeOfDay(widget.registro.salida1);
-    _entrada2 = TimeUtils.parseTimeOfDay(widget.registro.entrada2);
     _salidaReal = TimeUtils.parseTimeOfDay(widget.registro.salidaReal);
+    _pausas = [...widget.registro.pausas];
     _tipoDia = widget.registro.tipoDia;
     _notaController = TextEditingController(text: widget.registro.nota ?? '');
     _cargarUbicaciones();
@@ -69,18 +70,42 @@ class _EditDayScreenState extends State<EditDayScreen> {
     final nota = _notaController.text.trim();
     return widget.registro.copyWith(
       entrada1: _entrada1 != null ? TimeUtils.formatTimeOfDay(_entrada1!) : null,
-      salida1: _salida1 != null ? TimeUtils.formatTimeOfDay(_salida1!) : null,
-      entrada2: _entrada2 != null ? TimeUtils.formatTimeOfDay(_entrada2!) : null,
       salidaReal:
           _salidaReal != null ? TimeUtils.formatTimeOfDay(_salidaReal!) : null,
+      pausas: Pausa.ordenar(_pausas),
       tipoDia: _tipoDia,
       nota: nota,
       clearEntrada1: _entrada1 == null,
-      clearSalida1: _salida1 == null,
-      clearEntrada2: _entrada2 == null,
       clearSalidaReal: _salidaReal == null,
       clearNota: nota.isEmpty,
     );
+  }
+
+  /// Añade una pausa preguntando primero cuándo empezó. Se pide la hora en
+  /// vez de crearla vacía porque una pausa sin inicio no significa nada y
+  /// habría que borrarla para deshacerse de ella.
+  Future<void> _agregarPausa() async {
+    final inicio = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 12, minute: 0),
+      helpText: '¿A qué hora empezó la pausa?',
+    );
+    if (inicio == null || !mounted) return;
+    final fin = await showTimePicker(
+      context: context,
+      initialTime: inicio,
+      helpText: '¿A qué hora volviste?',
+    );
+    if (!mounted) return;
+    setState(() {
+      _pausas = Pausa.ordenar([
+        ..._pausas,
+        Pausa(
+          inicio: TimeUtils.formatTimeOfDay(inicio),
+          fin: fin == null ? null : TimeUtils.formatTimeOfDay(fin),
+        ),
+      ]);
+    });
   }
 
   Future<void> _guardar() async {
@@ -119,36 +144,43 @@ class _EditDayScreenState extends State<EditDayScreen> {
               children: [
                 MarkRow(
                   icon: Icons.login,
-                  label: 'Entrada mañana',
+                  label: 'Entrada',
                   horaTexto:
                       _entrada1 != null ? TimeUtils.formatTimeOfDay(_entrada1!) : '--:--',
                   valorActual: _entrada1,
                   onEditar: (t) => setState(() => _entrada1 = t),
                   onLimpiar: () => setState(() => _entrada1 = null),
-                  ubicacion: _ubicaciones['entrada1'],
+                  evidencia: EvidenciaMarca(
+                    ubicacion: _ubicaciones[ClaveUbicacion.entrada],
+                  ),
                 ),
-                const Divider(height: 1),
-                MarkRow(
-                  icon: Icons.lunch_dining,
-                  label: 'Salida almuerzo',
-                  horaTexto:
-                      _salida1 != null ? TimeUtils.formatTimeOfDay(_salida1!) : '--:--',
-                  valorActual: _salida1,
-                  onEditar: (t) => setState(() => _salida1 = t),
-                  onLimpiar: () => setState(() => _salida1 = null),
-                  ubicacion: _ubicaciones['salida1'],
-                ),
-                const Divider(height: 1),
-                MarkRow(
-                  icon: Icons.keyboard_return,
-                  label: 'Entrada tarde',
-                  horaTexto:
-                      _entrada2 != null ? TimeUtils.formatTimeOfDay(_entrada2!) : '--:--',
-                  valorActual: _entrada2,
-                  onEditar: (t) => setState(() => _entrada2 = t),
-                  onLimpiar: () => setState(() => _entrada2 = null),
-                  ubicacion: _ubicaciones['entrada2'],
-                ),
+                for (final (indice, pausa) in _pausas.indexed) ...[
+                  const Divider(height: 1),
+                  PausaRow(
+                    numero: indice + 1,
+                    pausa: pausa,
+                    esAlmuerzo: pausa == preview.almuerzo,
+                    onEditarInicio: (t) => setState(
+                      () => _pausas[indice] =
+                          pausa.conInicio(TimeUtils.formatTimeOfDay(t)),
+                    ),
+                    onEditarFin: (t) => setState(
+                      () => _pausas[indice] =
+                          pausa.cerrar(TimeUtils.formatTimeOfDay(t)),
+                    ),
+                    onEliminar: () => setState(() => _pausas.removeAt(indice)),
+                    evidenciaInicio: pausa == preview.almuerzo
+                        ? EvidenciaMarca(
+                            ubicacion: _ubicaciones[ClaveUbicacion.almuerzoInicio],
+                          )
+                        : EvidenciaMarca.ninguna,
+                    evidenciaFin: pausa == preview.almuerzo
+                        ? EvidenciaMarca(
+                            ubicacion: _ubicaciones[ClaveUbicacion.almuerzoFin],
+                          )
+                        : EvidenciaMarca.ninguna,
+                  ),
+                ],
                 const Divider(height: 1),
                 MarkRow(
                   icon: Icons.logout,
@@ -159,7 +191,21 @@ class _EditDayScreenState extends State<EditDayScreen> {
                   valorActual: _salidaReal,
                   onEditar: (t) => setState(() => _salidaReal = t),
                   onLimpiar: () => setState(() => _salidaReal = null),
-                  ubicacion: _ubicaciones['salidaReal'],
+                  evidencia: EvidenciaMarca(
+                    ubicacion: _ubicaciones[ClaveUbicacion.salidaReal],
+                  ),
+                ),
+                const Divider(height: 1),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+                    child: TextButton.icon(
+                      onPressed: _agregarPausa,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Añadir pausa'),
+                    ),
+                  ),
                 ),
               ],
             ),

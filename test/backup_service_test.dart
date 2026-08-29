@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/models/ubicacion_marca.dart';
@@ -18,8 +19,7 @@ void main() {
       Registro(
         fecha: '2026-08-21',
         entrada1: '08:00',
-        salida1: '12:00',
-        entrada2: '13:00',
+        pausas: const [Pausa(inicio: '12:00', fin: '13:00')],
         salidaReal: '17:00',
         metaMinutos: 510,
       ),
@@ -36,8 +36,7 @@ void main() {
       Registro(
         fecha: '2026-08-21',
         entrada1: '08:00',
-        salida1: '12:00',
-        entrada2: '13:00',
+        pausas: const [Pausa(inicio: '12:00', fin: '13:00')],
         salidaReal: '17:30',
         metaMinutos: 510,
       ),

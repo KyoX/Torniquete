@@ -4,6 +4,7 @@ import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
 import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
+import 'pausas_service.dart';
 
 class DailyStat {
   final Registro registro;
@@ -251,74 +252,90 @@ class ResumenPeriodo {
 /// No dependen de widgets ni de la base de datos directamente: reciben
 /// la lista de registros ya cargada.
 class ReportsService {
-  static int minutosTrabajados(Registro r) {
-    final e1 = TimeUtils.parseTimeOfDay(r.entrada1);
-    final s1 = TimeUtils.parseTimeOfDay(r.salida1);
-    final e2 = TimeUtils.parseTimeOfDay(r.entrada2);
-    final sr = TimeUtils.parseTimeOfDay(r.salidaReal);
-    if (e1 != null && s1 != null && e2 != null && sr != null) {
-      return (TimeUtils.toMinutes(s1) - TimeUtils.toMinutes(e1)) +
-          (TimeUtils.toMinutes(sr) - TimeUtils.toMinutes(e2));
-    }
-    return r.minutosCumplidos;
+  /// Minutos de almuerzo que hay que descontar aunque no se hayan tomado.
+  ///
+  /// Hay empresas que descuentan un almuerzo fijo se salga o no a comer. Ese
+  /// descuento es un *mínimo*: si se almorzó más de la cuenta ya se descuenta
+  /// solo —el tramo de pausa nunca contó como trabajado— y aquí no queda nada
+  /// pendiente. Si se almorzó menos, o no se salió, esta función devuelve lo
+  /// que falta para completarlo.
+  ///
+  /// Solo cuentan los minutos de pausa que caen en la ventana de almuerzo
+  /// ([PausasService.inicioAlmuerzo]-[PausasService.finAlmuerzo]): una
+  /// diligencia a media mañana es tiempo fuera, pero no es el almuerzo que
+  /// la empresa va a descontar igual.
+  ///
+  /// [minutosAhora] es el minuto del día hasta el que se cuenta una pausa
+  /// todavía abierta. Con él, el almuerzo en curso se va acreditando minuto a
+  /// minuto; sin él, al empezar la pausa se restaría el descuento entero de
+  /// golpe para devolverlo al volver, y el progreso del día pegaría un salto
+  /// en cada marca.
+  static int descuentoPendiente(Registro r, {int? minutosAhora}) {
+    if (r.descuentoAlmuerzoMinutos <= 0) return 0;
+    // Un día sin entrada no ha empezado: no hay jornada de la que descontar.
+    if (TimeUtils.parseTimeOfDay(r.entrada1) == null) return 0;
+
+    final tomado = PausasService.minutosDeAlmuerzo(
+      r.pausas,
+      hasta: minutosAhora ?? _minutos(r.salidaReal),
+    );
+    final pendiente = r.descuentoAlmuerzoMinutos - tomado;
+    return pendiente > 0 ? pendiente : 0;
   }
+
+  /// Nunca menos de cero: un descuento mayor que lo trabajado no puede
+  /// convertir el día en horas negativas.
+  static int _sinNegativos(int minutos) => minutos < 0 ? 0 : minutos;
+
+  static int? _minutos(String? hora) {
+    final t = TimeUtils.parseTimeOfDay(hora);
+    return t == null ? null : TimeUtils.toMinutes(t);
+  }
+
+  /// El cálculo de un día, y el único: desde la entrada hasta [cierre], menos
+  /// lo que se estuvo de pausa, menos el almuerzo que la empresa descuenta y
+  /// no se llegó a tomar.
+  ///
+  /// Una pausa abierta se cierra siempre en [cierre]. Quien se fue y no
+  /// volvió no estuvo trabajando mientras tanto, tanto si el día sigue
+  /// corriendo como si se cerró después sin marcar el regreso.
+  ///
+  /// Null cuando falta la entrada o el cierre: no hay día que medir, y
+  /// devolver cero se confundiría con un día de cero horas.
+  static int? _jornada(Registro r, {required int? cierre}) {
+    final entrada = _minutos(r.entrada1);
+    if (entrada == null || cierre == null) return null;
+    return _sinNegativos(
+      cierre -
+          entrada -
+          PausasService.minutosPausados(r.pausas, hasta: cierre) -
+          descuentoPendiente(r, minutosAhora: cierre),
+    );
+  }
+
+  /// Minutos trabajados de un día ya cerrado. Sin salida real no hay nada
+  /// que calcular y se cae al último valor guardado, que es lo que la app
+  /// dejó escrito la última vez que supo del día.
+  static int minutosTrabajados(Registro r) =>
+      _jornada(r, cierre: _minutos(r.salidaReal)) ?? r.minutosCumplidos;
 
   /// Minutos trabajados calculados únicamente a partir de las marcas
   /// presentes (sin caer al valor guardado). Se usa al editar un día
   /// manualmente desde el Historial, donde el usuario define los valores
   /// definitivos de ese día.
-  static int minutosDesdeMarcas(Registro r) {
-    int total = 0;
-    final e1 = TimeUtils.parseTimeOfDay(r.entrada1);
-    final s1 = TimeUtils.parseTimeOfDay(r.salida1);
-    final e2 = TimeUtils.parseTimeOfDay(r.entrada2);
-    final sr = TimeUtils.parseTimeOfDay(r.salidaReal);
-    if (e1 != null && s1 != null) {
-      total += TimeUtils.toMinutes(s1) - TimeUtils.toMinutes(e1);
-    }
-    if (e2 != null && sr != null) {
-      total += TimeUtils.toMinutes(sr) - TimeUtils.toMinutes(e2);
-    }
-    return total;
-  }
+  ///
+  /// Sin salida real el día se cierra donde empezó la pausa que quedó
+  /// abierta: es hasta ahí donde se sabe que se estuvo trabajando.
+  static int minutosDesdeMarcas(Registro r) =>
+      _jornada(r, cierre: _minutos(r.salidaReal) ?? _minutos(r.pausaAbierta?.inicio)) ??
+      0;
 
-  /// Minutos trabajados con los tramos aún abiertos contados en vivo contra
-  /// [minutosAhora] (minutos desde medianoche). La mañana se cierra con la
-  /// salida a almuerzo y la tarde con la salida real; mientras esas marcas
-  /// falten, el tramo sigue corriendo. Es la versión pura de lo que muestra
-  /// el dashboard del día en curso.
-  static int minutosEnVivo(Registro r, int minutosAhora) {
-    final e1 = TimeUtils.parseTimeOfDay(r.entrada1);
-    final s1 = TimeUtils.parseTimeOfDay(r.salida1);
-    final e2 = TimeUtils.parseTimeOfDay(r.entrada2);
-    final sr = TimeUtils.parseTimeOfDay(r.salidaReal);
-
-    int total = 0;
-
-    // Mañana. Mientras no haya salida a almuerzo ni regreso, el tramo sigue
-    // abierto y corre contra la hora actual. Si falta la salida a almuerzo
-    // pero ya se marcó el regreso, el tramo es inconsistente y no se computa,
-    // igual que en [minutosDesdeMarcas]: así el dashboard y los reportes
-    // nunca muestran totales distintos para el mismo día.
-    if (e1 != null) {
-      final int? fin = s1 != null
-          ? TimeUtils.toMinutes(s1)
-          : (e2 == null ? minutosAhora : null);
-      if (fin != null) {
-        final manana = fin - TimeUtils.toMinutes(e1);
-        if (manana > 0) total += manana;
-      }
-    }
-
-    // Tarde: solo cuenta una vez marcado el regreso del almuerzo.
-    if (e2 != null) {
-      final fin = sr != null ? TimeUtils.toMinutes(sr) : minutosAhora;
-      final tarde = fin - TimeUtils.toMinutes(e2);
-      if (tarde > 0) total += tarde;
-    }
-
-    return total;
-  }
+  /// Minutos trabajados con el día todavía en marcha, contando contra
+  /// [minutosAhora] (minutos desde medianoche). Es la versión pura de lo que
+  /// muestra el dashboard del día en curso: mientras no haya salida real el
+  /// reloj sigue corriendo, salvo que se esté en una pausa.
+  static int minutosEnVivo(Registro r, int minutosAhora) =>
+      _jornada(r, cierre: _minutos(r.salidaReal) ?? minutosAhora) ?? 0;
 
   /// Un día "cuenta" solo si tiene horas registradas. Los días en blanco
   /// no restan contra la meta: el balance es únicamente aditivo.

@@ -1,19 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/pausa.dart';
 import '../models/registro.dart';
 import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
+import '../services/geocerca_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
+import '../services/pausas_service.dart';
 import '../services/prefs_service.dart';
 import '../services/reports_service.dart';
 import '../services/widget_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/time_utils.dart';
 
-enum MarcaTipo { entrada1, salida1, entrada2, salidaReal }
+/// Las marcas que el usuario puede registrar.
+///
+/// [pausa] y [reanudar] no apuntan a un hueco fijo del día: abren y cierran
+/// la pausa que toque, y un día puede tener varias.
+enum MarcaTipo { entrada1, pausa, reanudar, salidaReal }
+
+/// Claves con las que se guarda la evidencia de ubicación de cada marca.
+///
+/// Las del almuerzo conservan el nombre que tenían cuando eran marcas fijas
+/// del día para no dejar huérfana la evidencia ya guardada.
+class ClaveUbicacion {
+  const ClaveUbicacion._();
+
+  static const String entrada = 'entrada1';
+  static const String salidaReal = 'salidaReal';
+  static const String almuerzoInicio = 'salida1';
+  static const String almuerzoFin = 'entrada2';
+}
 
 /// Maneja el registro del día actual: sus marcas, el cálculo de la hora
 /// estimada de salida y la persistencia en SQLite + notificaciones.
@@ -34,18 +54,18 @@ class RegistroProvider extends ChangeNotifier {
   /// La pantalla lo consume con [limpiarAvisoGeocerca].
   String? avisoGeocerca;
 
-  /// Tipos de marca cuya ubicación se está capturando en este momento.
-  final Set<MarcaTipo> _capturandoUbicacion = {};
+  /// Marcas cuya ubicación se está capturando en este momento, por clave.
+  final Set<String> _capturandoUbicacion = {};
 
-  bool capturandoUbicacion(MarcaTipo tipo) =>
-      _capturandoUbicacion.contains(tipo);
+  bool capturandoUbicacion(String clave) =>
+      _capturandoUbicacion.contains(clave);
 
-  UbicacionMarca? ubicacionDe(MarcaTipo tipo) => ubicacionesHoy[tipo.name];
+  UbicacionMarca? ubicacionDe(String clave) => ubicacionesHoy[clave];
 
   /// Qué tan lejos de la sede quedó una marca. Null si la geocerca está
   /// apagada o si esa marca no tiene ubicación guardada.
-  EvaluacionGeocerca? geocercaDe(MarcaTipo tipo) {
-    final ubicacion = ubicacionDe(tipo);
+  EvaluacionGeocerca? geocercaDe(String clave) {
+    final ubicacion = ubicacionDe(clave);
     if (ubicacion == null) return null;
     return LocationService.instance.evaluarSede(
       sede,
@@ -54,11 +74,48 @@ class RegistroProvider extends ChangeNotifier {
     );
   }
 
+  /// Todo lo que se sabe de dónde se registró una marca, listo para la
+  /// fila que la muestra.
+  EvidenciaMarca evidenciaDe(String clave) => EvidenciaMarca(
+        ubicacion: ubicacionDe(clave),
+        capturando: capturandoUbicacion(clave),
+        geocerca: geocercaDe(clave),
+      );
+
   /// Marca el aviso como ya mostrado. No notifica a propósito: se llama
   /// desde un listener del propio provider y no hay nada que redibujar.
   void limpiarAvisoGeocerca() => avisoGeocerca = null;
 
   static String fechaHoy() => DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+  /// Qué marca ofrecería el aviso de llegada para [registro], o null si no
+  /// hay ninguna que ofrecer.
+  ///
+  /// Es la única definición de "qué falta marcar al llegar" de toda la app:
+  /// el lado nativo no la recalcula, solo lee el resultado que se le deja
+  /// escrito, porque tiene que poder preguntar con la app cerrada.
+  ///
+  /// Reanudar solo se ofrece si hay una pausa abierta. Sin esa condición,
+  /// cualquier vuelta al radio a media mañana —salir por un café, registrar
+  /// la geocerca otra vez estando ya en la oficina— preguntaría a destiempo.
+  /// Quien olvida marcar la pausa tiene el recordatorio de marca para eso.
+  static MarcaTipo? marcaSugeridaAlLlegar(Registro? registro) {
+    if (registro == null) return null;
+    // Un festivo o un día de vacaciones no espera marcas, y una jornada ya
+    // cerrada tampoco: pasar por la sede después no reabre el día.
+    if (registro.tipoDia.esJustificado) return null;
+    if (registro.salidaReal != null) return null;
+    if (registro.entrada1 == null) return MarcaTipo.entrada1;
+    if (registro.pausaAbierta != null) return MarcaTipo.reanudar;
+    return null;
+  }
+
+  static MarcaTipo? _marcaPorNombre(String nombre) {
+    for (final tipo in MarcaTipo.values) {
+      if (tipo.name == nombre) return tipo;
+    }
+    return null;
+  }
 
   /// Carga (o crea) el registro de hoy. Si se pasa [nombreUsuario] se
   /// vuelve a programar el recordatorio de salida, para que siga vigente
@@ -71,10 +128,21 @@ class RegistroProvider extends ChangeNotifier {
     notifyListeners();
     final fecha = fechaHoy();
     final existente = await _db.getRegistroPorFecha(fecha);
+    final descuento = await _prefs.getDescuentoAlmuerzo();
     registroHoy = existente ??
-        Registro(fecha: fecha, metaMinutos: metaMinutos, minutosCumplidos: 0);
+        Registro(
+          fecha: fecha,
+          metaMinutos: metaMinutos,
+          minutosCumplidos: 0,
+          descuentoAlmuerzoMinutos: descuento,
+        );
     if (existente != null && existente.metaMinutos != metaMinutos) {
       registroHoy = registroHoy!.copyWith(metaMinutos: metaMinutos);
+    }
+    // El día en curso sigue el ajuste vigente: cambiarlo por la mañana tiene
+    // que verse hoy mismo. Los días ya cerrados conservan el suyo.
+    if (existente != null && existente.descuentoAlmuerzoMinutos != descuento) {
+      registroHoy = registroHoy!.copyWith(descuentoAlmuerzoMinutos: descuento);
     }
     ubicacionesHoy = await _db.getUbicacionesPorFecha(fecha);
     sede = await _prefs.getSede();
@@ -84,33 +152,47 @@ class RegistroProvider extends ChangeNotifier {
   }
 
   TimeOfDay? get entrada1 => TimeUtils.parseTimeOfDay(registroHoy?.entrada1);
-  TimeOfDay? get salida1 => TimeUtils.parseTimeOfDay(registroHoy?.salida1);
-  TimeOfDay? get entrada2 => TimeUtils.parseTimeOfDay(registroHoy?.entrada2);
   TimeOfDay? get salidaReal => TimeUtils.parseTimeOfDay(registroHoy?.salidaReal);
+
+  List<Pausa> get pausas => registroHoy?.pausas ?? const [];
+
+  /// La pausa en curso, si el día está parado ahora mismo.
+  Pausa? get pausaAbierta => registroHoy?.pausaAbierta;
+
+  /// La pausa que hace de almuerzo, para poder señalarla en la lista.
+  Pausa? get almuerzo => registroHoy?.almuerzo;
+
+  /// Minutos que se lleva fuera del trabajo hoy, con la pausa en curso
+  /// contando en vivo.
+  int get minutosPausadosHastaAhora => PausasService.minutosPausados(
+        pausas,
+        hasta: TimeUtils.toMinutes(TimeOfDay.now()),
+      );
 
   TipoDia get tipoDiaHoy => registroHoy?.tipoDia ?? TipoDia.normal;
 
-  /// Tiempo trabajado en la mañana (Marca2 - Marca1), en minutos.
-  int? get tiempoTrabajadoMananaMin {
-    final e1 = entrada1;
-    final s1 = salida1;
-    if (e1 == null || s1 == null) return null;
-    return TimeUtils.toMinutes(s1) - TimeUtils.toMinutes(e1);
-  }
-
-  /// Tiempo restante para cumplir la meta tras descontar lo trabajado en la mañana.
-  int? get tiempoRestanteMin {
-    final trabajado = tiempoTrabajadoMananaMin;
-    if (trabajado == null || registroHoy == null) return null;
-    return registroHoy!.metaEfectivaMinutos - trabajado;
-  }
-
-  /// Hora estimada de salida = Marca3 (entrada2) + tiempo restante.
+  /// Hora estimada de salida.
+  ///
+  /// La entrada, más la meta del día, más todo lo que se ha estado fuera:
+  /// cada pausa empuja la salida hacia adelante justo lo que duró. Al
+  /// almuerzo que la empresa descuenta y todavía no se ha tomado se le hace
+  /// sitio desde el principio, porque va a costar igual se salga o no.
+  ///
+  /// Mientras la pausa sigue abierta la hora se va corriendo minuto a
+  /// minuto: es una estimación de "si vuelves ya y no paras más", y se
+  /// corrige sola en cuanto se reanuda.
   TimeOfDay? get horaEstimadaSalida {
-    final e2 = entrada2;
-    final restante = tiempoRestanteMin;
-    if (e2 == null || restante == null) return null;
-    return TimeUtils.fromMinutes(TimeUtils.toMinutes(e2) + restante);
+    final registro = registroHoy;
+    final e1 = entrada1;
+    if (registro == null || e1 == null) return null;
+
+    final ahora = TimeUtils.toMinutes(TimeOfDay.now());
+    return TimeUtils.fromMinutes(
+      TimeUtils.toMinutes(e1) +
+          registro.metaEfectivaMinutos +
+          PausasService.minutosPausados(registro.pausas, hasta: ahora) +
+          ReportsService.descuentoPendiente(registro, minutosAhora: ahora),
+    );
   }
 
   DateTime? get horaEstimadaSalidaDateTime {
@@ -152,6 +234,60 @@ class RegistroProvider extends ChangeNotifier {
     await _setMarca(tipo, TimeOfDay.now(), nombreUsuario: nombreUsuario);
   }
 
+  /// Cambia a mano la hora en que empezó la pausa [indice].
+  Future<void> editarInicioPausa(
+    int indice,
+    TimeOfDay hora, {
+    required String nombreUsuario,
+  }) =>
+      _cambiarPausas(
+        (pausas) => pausas[indice] =
+            pausas[indice].conInicio(TimeUtils.formatTimeOfDay(hora)),
+        indice: indice,
+        nombreUsuario: nombreUsuario,
+      );
+
+  /// Cambia a mano la hora en que terminó la pausa [indice].
+  Future<void> editarFinPausa(
+    int indice,
+    TimeOfDay hora, {
+    required String nombreUsuario,
+  }) =>
+      _cambiarPausas(
+        (pausas) =>
+            pausas[indice] = pausas[indice].cerrar(TimeUtils.formatTimeOfDay(hora)),
+        indice: indice,
+        nombreUsuario: nombreUsuario,
+      );
+
+  /// Borra una pausa entera. Lo que duró vuelve a contar como trabajado.
+  Future<void> eliminarPausa(int indice, {required String nombreUsuario}) =>
+      _cambiarPausas(
+        (pausas) => pausas.removeAt(indice),
+        nombreUsuario: nombreUsuario,
+      );
+
+  /// Aplica un cambio sobre la lista de pausas y vuelve a calcular el día.
+  ///
+  /// [indice] solo sirve para no tocar nada si la lista cambió por debajo
+  /// (dos toques seguidos, una recarga a media edición).
+  Future<void> _cambiarPausas(
+    void Function(List<Pausa> pausas) cambio, {
+    int? indice,
+    required String nombreUsuario,
+  }) async {
+    final registro = registroHoy;
+    if (registro == null) return;
+    if (indice != null && (indice < 0 || indice >= registro.pausas.length)) {
+      return;
+    }
+    final pausas = [...registro.pausas];
+    cambio(pausas);
+    registroHoy = registro.copyWith(pausas: Pausa.ordenar(pausas));
+    notifyListeners();
+    await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
+  }
+
   /// Confirma la hora real de salida (por si se trabaja más tiempo del
   /// estimado). Queda registrada para los reportes de cumplimiento.
   Future<void> confirmarSalida({required String nombreUsuario}) async {
@@ -190,25 +326,65 @@ class RegistroProvider extends ChangeNotifier {
     required String nombreUsuario,
     bool manual = false,
   }) async {
-    if (registroHoy == null) return;
+    final registro = registroHoy;
+    if (registro == null) return;
     final valor = TimeUtils.formatTimeOfDay(hora);
     switch (tipo) {
       case MarcaTipo.entrada1:
-        registroHoy = registroHoy!.copyWith(entrada1: valor);
+        registroHoy = registro.copyWith(entrada1: valor);
         break;
-      case MarcaTipo.salida1:
-        registroHoy = registroHoy!.copyWith(salida1: valor);
+      case MarcaTipo.pausa:
+        // Dos pausas abiertas a la vez no significan nada: si ya hay una
+        // corriendo, el botón que toca es el de continuar.
+        if (registro.pausaAbierta != null) return;
+        registroHoy = registro.copyWith(
+          pausas: Pausa.ordenar([...registro.pausas, Pausa(inicio: valor)]),
+        );
         break;
-      case MarcaTipo.entrada2:
-        registroHoy = registroHoy!.copyWith(entrada2: valor);
+      case MarcaTipo.reanudar:
+        final abierta = registro.pausaAbierta;
+        if (abierta == null) return;
+        registroHoy = registro.copyWith(
+          pausas: [
+            for (final pausa in registro.pausas)
+              pausa == abierta ? pausa.cerrar(valor) : pausa,
+          ],
+        );
         break;
       case MarcaTipo.salidaReal:
-        registroHoy = registroHoy!.copyWith(salidaReal: valor);
+        registroHoy = registro.copyWith(salidaReal: valor);
         break;
     }
     notifyListeners();
+    // El aviso de llegada, si seguía en la barra, ya no tiene nada que
+    // preguntar en cuanto la marca existe.
+    await GeocercaService.instance.cancelarAviso();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
     await _guardarUbicacionDeMarca(tipo, valor, manual: manual);
+  }
+
+  /// Con qué clave se guarda la evidencia de ubicación de una marca, o null
+  /// si esa marca no lleva evidencia.
+  ///
+  /// De las pausas solo se guarda la del almuerzo, y bajo las claves de
+  /// siempre. Numerarlas ("pausa 2") sería un identificador que cambia solo
+  /// en cuanto se borra o se reordena una pausa, y dejaría la evidencia
+  /// apuntando al tramo equivocado.
+  String? _claveDe(MarcaTipo tipo, String hora) {
+    switch (tipo) {
+      case MarcaTipo.entrada1:
+        return ClaveUbicacion.entrada;
+      case MarcaTipo.salidaReal:
+        return ClaveUbicacion.salidaReal;
+      case MarcaTipo.pausa:
+        return registroHoy?.almuerzo?.inicio == hora
+            ? ClaveUbicacion.almuerzoInicio
+            : null;
+      case MarcaTipo.reanudar:
+        return registroHoy?.almuerzo?.fin == hora
+            ? ClaveUbicacion.almuerzoFin
+            : null;
+    }
   }
 
   /// Deja constancia de dónde estaba el usuario al registrar la marca.
@@ -219,17 +395,20 @@ class RegistroProvider extends ChangeNotifier {
     String hora, {
     required bool manual,
   }) async {
-    if (registroHoy == null) return;
+    final registro = registroHoy;
+    if (registro == null) return;
+    final clave = _claveDe(tipo, hora);
+    if (clave == null) return;
     if (!await _prefs.getGuardarUbicacion()) return;
 
-    _capturandoUbicacion.add(tipo);
+    _capturandoUbicacion.add(clave);
     notifyListeners();
     try {
       final posicion = await LocationService.instance.capturar();
       if (posicion == null) return;
       final ubicacion = UbicacionMarca(
-        fecha: registroHoy!.fecha,
-        tipo: tipo.name,
+        fecha: registro.fecha,
+        tipo: clave,
         hora: hora,
         latitud: posicion.latitude,
         longitud: posicion.longitude,
@@ -238,10 +417,10 @@ class RegistroProvider extends ChangeNotifier {
         manual: manual,
       );
       await _db.guardarUbicacion(ubicacion);
-      ubicacionesHoy = {...ubicacionesHoy, tipo.name: ubicacion};
+      ubicacionesHoy = {...ubicacionesHoy, clave: ubicacion};
       _revisarGeocerca(ubicacion, manual: manual);
     } finally {
-      _capturandoUbicacion.remove(tipo);
+      _capturandoUbicacion.remove(clave);
       notifyListeners();
     }
   }
@@ -280,6 +459,7 @@ class RegistroProvider extends ChangeNotifier {
     notifyListeners();
 
     await _actualizarWidget();
+    await _sincronizarGeocerca();
     await _reprogramarRecordatoriosDeMarca();
 
     // En un día justificado no hay meta que cumplir ni salida que anunciar.
@@ -297,6 +477,47 @@ class RegistroProvider extends ChangeNotifier {
     } else if (salida == null) {
       await NotificationService.instance.cancelarRecordatorioSalida();
     }
+  }
+
+  /// Le deja al sistema, por si la llegada ocurre con la app cerrada, la
+  /// fecha del día en curso y la marca que tocaría ofrecer.
+  Future<void> _sincronizarGeocerca() async {
+    await GeocercaService.instance.actualizarDia(
+      fecha: registroHoy?.fecha ?? fechaHoy(),
+      marcaSugerida: marcaSugeridaAlLlegar(registroHoy)?.name,
+    );
+  }
+
+  /// Registra la marca que el usuario aceptó en el aviso de llegada, si hay
+  /// alguna esperando. Devuelve cuál se registró y a qué hora, o null si no
+  /// había nada que hacer.
+  ///
+  /// La hora que queda registrada es la del toque en la notificación, no la
+  /// de ahora: entre tocar y que la app termine de abrirse pueden pasar
+  /// varios segundos, y la marca debe decir cuándo se llegó.
+  Future<({MarcaTipo tipo, String hora})?> registrarMarcaAceptada({
+    required String nombreUsuario,
+  }) async {
+    // Se comprueba antes de consumir: el lado nativo la entrega una sola vez,
+    // y recogerla sin tener dónde escribirla la perdería.
+    if (registroHoy == null) return null;
+    final aceptada = await GeocercaService.instance.consumirMarcaPendiente();
+    if (aceptada == null) return null;
+
+    final tipo = _marcaPorNombre(aceptada.tipo);
+    if (tipo == null) return null;
+    // Una marca de ayer que se quedó sin recoger (el teléfono se apagó, la
+    // app no se abrió) no se arrastra al día de hoy.
+    if (DateFormat('yyyy-MM-dd').format(aceptada.cuando) != registroHoy!.fecha) {
+      return null;
+    }
+    // Si mientras tanto se marcó a mano, manda lo que ya está guardado: la
+    // marca aceptada solo vale si sigue siendo la que falta.
+    if (marcaSugeridaAlLlegar(registroHoy) != tipo) return null;
+
+    final hora = TimeOfDay.fromDateTime(aceptada.cuando);
+    await _setMarca(tipo, hora, nombreUsuario: nombreUsuario);
+    return (tipo: tipo, hora: TimeUtils.formatTimeOfDay(hora));
   }
 
   Future<void> _actualizarWidget() async {
@@ -335,9 +556,13 @@ class RegistroProvider extends ChangeNotifier {
       case RecordatorioTipo.entrada:
         return registroHoy?.entrada1 != null;
       case RecordatorioTipo.salidaAlmuerzo:
-        return registroHoy?.salida1 != null;
+        // Basta con que ya haya una pausa en la franja del almuerzo, esté
+        // abierta o cerrada.
+        return registroHoy?.almuerzo != null;
       case RecordatorioTipo.regresoAlmuerzo:
-        return registroHoy?.entrada2 != null;
+        // Sin pausa abierta no hay nada que reanudar: o ya se volvió o no se
+        // llegó a salir.
+        return registroHoy?.pausaAbierta == null;
     }
   }
 }

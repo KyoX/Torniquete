@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/services/db_service.dart';
+import 'package:torniquete/services/reports_service.dart';
 
 /// Comprueba que una instalación vieja sobrevive a la actualización.
 ///
@@ -93,6 +95,86 @@ void main() {
     });
   }
 
+  /// Esquema de la v4: el de la versión publicada antes del descuento fijo
+  /// de almuerzo.
+  Future<void> crearV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE registros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT UNIQUE NOT NULL,
+        entrada_1 TEXT,
+        salida_1 TEXT,
+        entrada_2 TEXT,
+        salida_real TEXT,
+        meta_minutos INTEGER NOT NULL,
+        horas_cumplidas INTEGER NOT NULL DEFAULT 0,
+        tipo_dia TEXT NOT NULL DEFAULT 'normal',
+        nota TEXT
+      )
+    ''');
+    await db.insert('registros', {
+      'fecha': '2026-03-10',
+      'entrada_1': '08:00',
+      'salida_1': '12:00',
+      'entrada_2': '12:20',
+      'salida_real': '17:00',
+      'meta_minutos': 510,
+      'horas_cumplidas': 520,
+      'tipo_dia': 'normal',
+    });
+  }
+
+  /// Esquema de la v5: el de la versión publicada antes de las pausas, con
+  /// el almuerzo todavía en un par de columnas fijas.
+  Future<void> crearV5(Database db) async {
+    await db.execute('''
+      CREATE TABLE registros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT UNIQUE NOT NULL,
+        entrada_1 TEXT,
+        salida_1 TEXT,
+        entrada_2 TEXT,
+        salida_real TEXT,
+        meta_minutos INTEGER NOT NULL,
+        horas_cumplidas INTEGER NOT NULL DEFAULT 0,
+        tipo_dia TEXT NOT NULL DEFAULT 'normal',
+        nota TEXT,
+        descuento_almuerzo_min INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.insert('registros', {
+      'fecha': '2026-04-06',
+      'entrada_1': '08:00',
+      'salida_1': '12:00',
+      'entrada_2': '12:30',
+      'salida_real': '17:00',
+      'meta_minutos': 510,
+      'horas_cumplidas': 510,
+      'tipo_dia': 'normal',
+      'descuento_almuerzo_min': 30,
+    });
+    // Una jornada corrida: no salió a comer, así que no hay pausa que crear.
+    await db.insert('registros', {
+      'fecha': '2026-04-07',
+      'entrada_1': '08:00',
+      'salida_real': '16:30',
+      'meta_minutos': 510,
+      'horas_cumplidas': 480,
+      'tipo_dia': 'normal',
+      'descuento_almuerzo_min': 30,
+    });
+    // Y un día en que se salió a comer y se olvidó marcar la vuelta.
+    await db.insert('registros', {
+      'fecha': '2026-04-08',
+      'entrada_1': '08:00',
+      'salida_1': '12:00',
+      'meta_minutos': 510,
+      'horas_cumplidas': 240,
+      'tipo_dia': 'normal',
+      'descuento_almuerzo_min': 30,
+    });
+  }
+
   /// Abre [ruta] tal y como lo hace la app: misma versión, mismo esquema y
   /// misma migración.
   Future<Database> abrirComoLaApp(String ruta) {
@@ -155,13 +237,22 @@ void main() {
   }
 
   group('migración a la versión actual', () {
-    test('desde la v1 se aplican los tres pasos de corrido', () async {
+    test('desde la v1 se aplican todos los pasos de corrido', () async {
       final db = await migrarDesde(1, crearV1);
       addTearDown(db.close);
 
       final columnas = await columnasDe(db, 'registros');
-      // Paso 1 -> 2, paso 3 -> 4.
-      expect(columnas, containsAll(['salida_real', 'tipo_dia', 'nota']));
+      // Paso 1 -> 2, paso 3 -> 4, paso 4 -> 5.
+      expect(
+        columnas,
+        containsAll([
+          'salida_real',
+          'tipo_dia',
+          'nota',
+          'descuento_almuerzo_min',
+          'pausas',
+        ]),
+      );
       // Paso 2 -> 3 y paso 3 -> 4.
       expect(await existeTabla(db, 'ubicaciones'), isTrue);
       expect(await existeTabla(db, 'movimientos_banco'), isTrue);
@@ -178,6 +269,9 @@ void main() {
             .single,
       );
       expect(registro.entrada1, '08:00');
+      // El almuerzo de siempre se convierte en la primera pausa del día, y
+      // se sigue leyendo como almuerzo porque cae en la franja del mediodía.
+      expect(registro.pausas, [const Pausa(inicio: '12:00', fin: '13:00')]);
       expect(registro.salida1, '12:00');
       expect(registro.entrada2, '13:00');
       expect(registro.metaMinutos, 510);
@@ -244,6 +338,43 @@ void main() {
       expect(festivo.tipoDia, TipoDia.festivo);
       expect(festivo.nota, 'Navidad');
       expect((await db.query('movimientos_banco')).single['minutos'], -240);
+    });
+
+    test('desde la v4 los días viejos se quedan sin descuento de almuerzo',
+        () async {
+      final db = await migrarDesde(4, crearV4);
+      addTearDown(db.close);
+
+      final registro = Registro.fromMap((await db.query('registros')).single);
+      // Cero, no el ajuste que el usuario acabe de configurar: ese día se
+      // trabajó bajo la regla anterior y sus horas ya no se tocan.
+      expect(registro.descuentoAlmuerzoMinutos, 0);
+      expect(ReportsService.minutosTrabajados(registro), 520);
+    });
+
+    test('desde la v5 el almuerzo se convierte en la primera pausa', () async {
+      final db = await migrarDesde(5, crearV5);
+      addTearDown(db.close);
+
+      final dias = {
+        for (final fila in await db.query('registros'))
+          fila['fecha'] as String: Registro.fromMap(fila),
+      };
+
+      final completo = dias['2026-04-06']!;
+      expect(completo.pausas, [const Pausa(inicio: '12:00', fin: '12:30')]);
+      // Y las horas del día no se mueven al cambiar de representación.
+      expect(ReportsService.minutosTrabajados(completo), 510);
+
+      // Sin salida a almuerzo no había pausa que convertir, y una lista vacía
+      // no es lo mismo que una pausa vacía.
+      expect(dias['2026-04-07']!.pausas, isEmpty);
+      expect(ReportsService.minutosTrabajados(dias['2026-04-07']!), 480);
+
+      // La salida sin regreso se convierte en una pausa que quedó abierta.
+      final aMedias = dias['2026-04-08']!;
+      expect(aMedias.pausas, [const Pausa(inicio: '12:00')]);
+      expect(aMedias.pausaAbierta, isNotNull);
     });
 
     test('una instalación nueva queda igual que una migrada', () async {

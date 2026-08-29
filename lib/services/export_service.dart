@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/movimiento_banco.dart';
 import '../models/registro.dart';
 import '../utils/time_utils.dart';
+import 'pausas_service.dart';
 import 'reports_service.dart';
 
 /// En qué formato se entrega el reporte.
@@ -479,6 +480,18 @@ class ExportService {
     );
   }
 
+  /// Cuánto se estuvo de pausa ese día. Las columnas de almuerzo enseñan
+  /// solo la pausa del mediodía, así que sin esto un día con una diligencia
+  /// por la tarde no cuadraría con las horas trabajadas.
+  static String _pausas(Registro r) => TimeUtils.formatDurationMinutes(
+        PausasService.minutosPausados(
+          r.pausas,
+          hasta: TimeUtils.parseTimeOfDay(r.salidaReal) == null
+              ? null
+              : TimeUtils.toMinutes(TimeUtils.parseTimeOfDay(r.salidaReal)!),
+        ),
+      );
+
   static pw.Widget _tablaDiariaPdf(ReporteComprobacion reporte) {
     final filas = reporte.dias.map((d) {
       final r = d.registro;
@@ -488,6 +501,7 @@ class ExportService {
         TimeUtils.formatHHmm(r.salida1),
         TimeUtils.formatHHmm(r.entrada2),
         TimeUtils.formatHHmm(r.salidaReal),
+        _pausas(r),
         TimeUtils.formatDurationMinutes(d.minutosTrabajados),
         TimeUtils.formatDurationMinutes(ReportsService.metaEfectiva(r)),
         _conSigno(d.diferenciaMinutos),
@@ -502,6 +516,7 @@ class ExportService {
         'Almuerzo',
         'Regreso',
         'Salida',
+        'Pausas',
         'Trabajado',
         'Meta',
         'Dif.',
@@ -510,7 +525,7 @@ class ExportService {
       filas: filas,
       anchos: const {
         0: pw.FlexColumnWidth(2.2),
-        8: pw.FlexColumnWidth(2.2),
+        9: pw.FlexColumnWidth(2.2),
       },
       alineaciones: const {
         1: pw.Alignment.center,
@@ -520,6 +535,7 @@ class ExportService {
         5: pw.Alignment.centerRight,
         6: pw.Alignment.centerRight,
         7: pw.Alignment.centerRight,
+        8: pw.Alignment.centerRight,
       },
     );
   }
@@ -862,8 +878,8 @@ class ExportService {
     hoja.setColumnWidth(0, 12);
     hoja.setColumnWidth(1, 12);
     hoja.setColumnWidth(2, 12);
-    hoja.setColumnWidth(10, 16);
-    hoja.setColumnWidth(11, 30);
+    hoja.setColumnWidth(11, 16);
+    hoja.setColumnWidth(12, 30);
 
     _encabezados(hoja, [
       'Fecha',
@@ -873,6 +889,7 @@ class ExportService {
       'Salida almuerzo',
       'Regreso',
       'Salida',
+      'Tiempo en pausa',
       'Horas trabajadas',
       'Horas exigidas',
       'Diferencia',
@@ -890,6 +907,7 @@ class ExportService {
         xls.TextCellValue(TimeUtils.formatHHmm(r.salida1)),
         xls.TextCellValue(TimeUtils.formatHHmm(r.entrada2)),
         xls.TextCellValue(TimeUtils.formatHHmm(r.salidaReal)),
+        xls.TextCellValue(_pausas(r)),
         _horas(d.minutosTrabajados),
         _horas(ReportsService.metaEfectiva(r)),
         _horas(d.diferenciaMinutos),

@@ -6,6 +6,7 @@ import '../models/registro.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
+import '../services/pausas_service.dart';
 import '../services/reports_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
@@ -105,6 +106,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         Registro(
           fecha: fechaStr,
           metaMinutos: appProvider.metaMinutosParaDia(fecha.weekday),
+          descuentoAlmuerzoMinutos: appProvider.descuentoAlmuerzoMinutos,
         );
 
     await _editarDia(registro);
@@ -242,10 +244,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           spacing: 16,
                           runSpacing: 4,
                           children: [
-                            _Marca('Entrada', r.entrada1),
-                            _Marca('Salida almuerzo', r.salida1),
-                            _Marca('Regreso', r.entrada2),
-                            _Marca('Salida real', r.salidaReal),
+                            _Marca('Entrada',
+                                TimeUtils.formatHHmm(r.entrada1)),
+                            _Marca('Pausas',
+                                PausasService.resumen(r.pausas)),
+                            _Marca('Salida real',
+                                TimeUtils.formatHHmm(r.salidaReal)),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -268,14 +272,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
 class _Marca extends StatelessWidget {
   final String label;
-  final String? valor;
+
+  /// Ya formateado por quien llama: una hora suelta o el resumen de las
+  /// pausas, que no es una hora.
+  final String valor;
 
   const _Marca(this.label, this.valor);
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      '$label: ${TimeUtils.formatHHmm(valor)}',
+      '$label: $valor',
       style: Theme.of(context).textTheme.bodySmall,
     );
   }

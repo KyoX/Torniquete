@@ -4,6 +4,7 @@ import 'package:excel/excel.dart' as xls;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:torniquete/models/movimiento_banco.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/services/export_service.dart';
@@ -21,8 +22,7 @@ Registro reg(
   return Registro(
     fecha: fecha,
     entrada1: e1,
-    salida1: s1,
-    entrada2: e2,
+    pausas: [if (s1 != null) Pausa(inicio: s1, fin: e2)],
     salidaReal: sr,
     metaMinutos: meta,
     tipoDia: tipo,
@@ -172,17 +172,19 @@ void main() {
     expect(diario.maxRows, 5);
     final primerDia = diario.row(1);
     expect(textoDe(primerDia[0]), '2026-08-03');
+    // Una hora de pausa, que es la que separa la presencia de lo trabajado.
+    expect(textoDe(primerDia[7]), '1h 00m');
     // 9h 00m trabajadas.
-    expect(numeroDe(primerDia[7]), 9);
+    expect(numeroDe(primerDia[8]), 9);
     // 8h 30m exigidas.
-    expect(numeroDe(primerDia[8]), 8.5);
-    expect(numeroDe(primerDia[9]), 0.5);
+    expect(numeroDe(primerDia[9]), 8.5);
+    expect(numeroDe(primerDia[10]), 0.5);
 
     // El día festivo no exige meta y su nota viaja con él.
     final festivo = diario.row(4);
     expect(textoDe(festivo[2]), 'Festivo');
-    expect(numeroDe(festivo[8]), 0);
-    expect(textoDe(festivo[11]), 'Asueto trabajado');
+    expect(numeroDe(festivo[9]), 0);
+    expect(textoDe(festivo[12]), 'Asueto trabajado');
   });
 
   test('el Excel es un archivo xlsx de verdad (zip)', () {

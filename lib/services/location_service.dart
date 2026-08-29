@@ -17,6 +17,22 @@ enum PermisoUbicacion {
   servicioApagado,
 }
 
+/// Resultado de pedir la ubicación "todo el tiempo", la única con la que
+/// Android dispara una geocerca teniendo la app cerrada.
+enum PermisoDeFondo {
+  concedido,
+
+  /// El usuario solo dio "mientras se usa la app". Desde Android 11 subirlo a
+  /// "todo el tiempo" no se puede pedir con un diálogo: hay que mandarlo a los
+  /// ajustes del sistema.
+  soloEnUso,
+
+  /// Ni siquiera hay permiso de ubicación normal.
+  sinPermiso,
+
+  servicioApagado,
+}
+
 /// Envuelve el acceso al GPS. Todo es opcional: si el permiso no está
 /// concedido o el GPS falla, [capturar] devuelve null y la app sigue
 /// funcionando igual que antes.
@@ -32,6 +48,37 @@ class LocationService {
   }
 
   Future<bool> servicioActivo() => Geolocator.isLocationServiceEnabled();
+
+  /// true si la app puede leer la ubicación aunque esté cerrada.
+  Future<bool> tienePermisoDeFondo() async =>
+      await Geolocator.checkPermission() == LocationPermission.always;
+
+  /// Pide la ubicación "todo el tiempo". Primero asegura el permiso normal y
+  /// solo después intenta subirlo, que es el orden que exige Android: pedir
+  /// el de fondo sin tener el de primer plano se rechaza sin preguntar nada.
+  Future<PermisoDeFondo> solicitarPermisoDeFondo() async {
+    switch (await solicitarPermiso()) {
+      case PermisoUbicacion.concedido:
+        break;
+      case PermisoUbicacion.servicioApagado:
+        return PermisoDeFondo.servicioApagado;
+      case PermisoUbicacion.denegado:
+      case PermisoUbicacion.denegadoParaSiempre:
+        return PermisoDeFondo.sinPermiso;
+    }
+
+    var permiso = await Geolocator.checkPermission();
+    if (permiso == LocationPermission.whileInUse) {
+      // En Android 10 esta segunda petición sí muestra la opción "todo el
+      // tiempo"; de Android 11 en adelante el sistema la deniega en el acto y
+      // la respuesta es la misma que ya teníamos, que es justo lo que hace
+      // que haya que ofrecer los ajustes.
+      permiso = await Geolocator.requestPermission();
+    }
+    return permiso == LocationPermission.always
+        ? PermisoDeFondo.concedido
+        : PermisoDeFondo.soloEnUso;
+  }
 
   /// Pide el permiso al sistema (muestra el diálogo de Android si aplica).
   Future<PermisoUbicacion> solicitarPermiso() async {

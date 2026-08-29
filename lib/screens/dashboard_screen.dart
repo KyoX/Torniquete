@@ -5,12 +5,14 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/tipo_dia.dart';
+import '../models/ubicacion_marca.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import '../widgets/exit_banner.dart';
 import '../widgets/mark_row.dart';
+import '../widgets/pausa_row.dart';
 import '../widgets/progress_card.dart';
 import '../widgets/quick_action_buttons.dart';
 import 'history_screen.dart';
@@ -123,7 +125,15 @@ class _DashboardScreenState extends State<DashboardScreen>
       return;
     }
     _iniciarReloj();
-    _refrescar();
+    // La marca del aviso se revisa contra el día correcto: si la app estuvo
+    // en segundo plano pasada la medianoche, primero hay que recargar el día,
+    // y esa recarga ya la revisa al terminar.
+    if (_cambioDeDia()) {
+      _cargarDatos();
+    } else {
+      setState(() {});
+      _revisarMarcaDeLlegada();
+    }
   }
 
   Future<void> _cargarDatos() async {
@@ -138,6 +148,25 @@ class _DashboardScreenState extends State<DashboardScreen>
           metaMinutos,
           nombreUsuario: appProvider.nombre,
         );
+    await _revisarMarcaDeLlegada();
+  }
+
+  /// Registra la marca que el usuario aceptó desde el aviso de llegada.
+  ///
+  /// Se revisa al cargar y cada vez que la app vuelve a primer plano porque
+  /// el aviso llega con la app cerrada: tocarlo la despierta, y es aquí donde
+  /// esa decisión se convierte en una marca guardada.
+  Future<void> _revisarMarcaDeLlegada() async {
+    if (!mounted) return;
+    final nombre = context.read<AppProvider>().nombre ?? '';
+    final marca = await context
+        .read<RegistroProvider>()
+        .registrarMarcaAceptada(nombreUsuario: nombre);
+    if (!mounted || marca == null) return;
+    final aviso = marca.tipo == MarcaTipo.entrada1
+        ? 'Entrada registrada a las ${marca.hora}.'
+        : 'Jornada reanudada a las ${marca.hora}.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(aviso)));
   }
 
   @override
@@ -241,83 +270,74 @@ class _DashboardScreenState extends State<DashboardScreen>
                       children: [
                         MarkRow(
                           icon: Icons.login,
-                          label: 'Entrada mañana',
-                          horaTexto:
-                              TimeUtils.formatHHmm(registroProvider.registroHoy?.entrada1),
+                          label: 'Entrada',
+                          horaTexto: TimeUtils.formatHHmm(
+                              registroProvider.registroHoy?.entrada1),
                           valorActual: registroProvider.entrada1,
                           onEditar: (t) => registroProvider.editarManualmente(
                             MarcaTipo.entrada1,
                             t,
                             nombreUsuario: nombre,
                           ),
-                          ubicacion:
-                              registroProvider.ubicacionDe(MarcaTipo.entrada1),
-                          capturandoUbicacion: registroProvider
-                              .capturandoUbicacion(MarcaTipo.entrada1),
-                          geocerca:
-                              registroProvider.geocercaDe(MarcaTipo.entrada1),
+                          evidencia: registroProvider
+                              .evidenciaDe(ClaveUbicacion.entrada),
                         ),
-                        const Divider(height: 1),
-                        MarkRow(
-                          icon: Icons.lunch_dining,
-                          label: 'Salida almuerzo',
-                          horaTexto:
-                              TimeUtils.formatHHmm(registroProvider.registroHoy?.salida1),
-                          valorActual: registroProvider.salida1,
-                          onEditar: (t) => registroProvider.editarManualmente(
-                            MarcaTipo.salida1,
-                            t,
-                            nombreUsuario: nombre,
+                        for (final (indice, pausa)
+                            in registroProvider.pausas.indexed) ...[
+                          const Divider(height: 1),
+                          PausaRow(
+                            numero: indice + 1,
+                            pausa: pausa,
+                            esAlmuerzo: pausa == registroProvider.almuerzo,
+                            minutosAhora:
+                                TimeUtils.toMinutes(TimeOfDay.now()),
+                            onEditarInicio: (t) =>
+                                registroProvider.editarInicioPausa(
+                              indice,
+                              t,
+                              nombreUsuario: nombre,
+                            ),
+                            onEditarFin: (t) => registroProvider.editarFinPausa(
+                              indice,
+                              t,
+                              nombreUsuario: nombre,
+                            ),
+                            onEliminar: () => registroProvider.eliminarPausa(
+                              indice,
+                              nombreUsuario: nombre,
+                            ),
+                            evidenciaInicio: pausa == registroProvider.almuerzo
+                                ? registroProvider.evidenciaDe(
+                                    ClaveUbicacion.almuerzoInicio)
+                                : EvidenciaMarca.ninguna,
+                            evidenciaFin: pausa == registroProvider.almuerzo
+                                ? registroProvider
+                                    .evidenciaDe(ClaveUbicacion.almuerzoFin)
+                                : EvidenciaMarca.ninguna,
                           ),
-                          ubicacion:
-                              registroProvider.ubicacionDe(MarcaTipo.salida1),
-                          capturandoUbicacion: registroProvider
-                              .capturandoUbicacion(MarcaTipo.salida1),
-                          geocerca:
-                              registroProvider.geocercaDe(MarcaTipo.salida1),
-                        ),
-                        const Divider(height: 1),
-                        MarkRow(
-                          icon: Icons.keyboard_return,
-                          label: 'Entrada tarde',
-                          horaTexto:
-                              TimeUtils.formatHHmm(registroProvider.registroHoy?.entrada2),
-                          valorActual: registroProvider.entrada2,
-                          onEditar: (t) => registroProvider.editarManualmente(
-                            MarcaTipo.entrada2,
-                            t,
-                            nombreUsuario: nombre,
-                          ),
-                          ubicacion:
-                              registroProvider.ubicacionDe(MarcaTipo.entrada2),
-                          capturandoUbicacion: registroProvider
-                              .capturandoUbicacion(MarcaTipo.entrada2),
-                          geocerca:
-                              registroProvider.geocercaDe(MarcaTipo.entrada2),
-                        ),
+                        ],
                         const Divider(height: 1),
                         MarkRow(
                           icon: Icons.logout,
                           label: 'Salida real',
-                          horaTexto:
-                              TimeUtils.formatHHmm(registroProvider.registroHoy?.salidaReal),
+                          horaTexto: TimeUtils.formatHHmm(
+                              registroProvider.registroHoy?.salidaReal),
                           valorActual: registroProvider.salidaReal,
                           onEditar: (t) => registroProvider.editarManualmente(
                             MarcaTipo.salidaReal,
                             t,
                             nombreUsuario: nombre,
                           ),
-                          ubicacion:
-                              registroProvider.ubicacionDe(MarcaTipo.salidaReal),
-                          capturandoUbicacion: registroProvider
-                              .capturandoUbicacion(MarcaTipo.salidaReal),
-                          geocerca:
-                              registroProvider.geocercaDe(MarcaTipo.salidaReal),
+                          evidencia: registroProvider
+                              .evidenciaDe(ClaveUbicacion.salidaReal),
                         ),
                       ],
                     ),
                   ),
-                  if (registroProvider.entrada2 != null) ...[
+                  // Basta con haber entrado: quien no sale a almorzar nunca
+                  // marca el regreso y, con la puerta atada a esa marca, se
+                  // quedaba sin poder cerrar el día.
+                  if (registroProvider.entrada1 != null) ...[
                     const SizedBox(height: 16),
                     if (registroProvider.salidaReal == null)
                       SizedBox(
@@ -368,21 +388,25 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ],
                   const SizedBox(height: 20),
                   QuickActionButtons(
-                    entrada1Habilitada: registroProvider.entrada1 == null,
-                    salida1Habilitada: registroProvider.entrada1 != null &&
-                        registroProvider.salida1 == null,
-                    entrada2Habilitada: registroProvider.salida1 != null &&
-                        registroProvider.entrada2 == null,
+                    entradaHabilitada: registroProvider.entrada1 == null &&
+                        registroProvider.salidaReal == null,
+                    // Se puede pausar tantas veces como haga falta, siempre
+                    // que la jornada esté abierta y no se esté ya en una.
+                    pausaHabilitada: registroProvider.entrada1 != null &&
+                        registroProvider.salidaReal == null &&
+                        registroProvider.pausaAbierta == null,
+                    continuarHabilitada:
+                        registroProvider.pausaAbierta != null,
                     onEntrada: () => registroProvider.marcar(
                       MarcaTipo.entrada1,
                       nombreUsuario: nombre,
                     ),
-                    onSalidaComer: () => registroProvider.marcar(
-                      MarcaTipo.salida1,
+                    onPausa: () => registroProvider.marcar(
+                      MarcaTipo.pausa,
                       nombreUsuario: nombre,
                     ),
-                    onRegresoComer: () => registroProvider.marcar(
-                      MarcaTipo.entrada2,
+                    onContinuar: () => registroProvider.marcar(
+                      MarcaTipo.reanudar,
                       nombreUsuario: nombre,
                     ),
                   ),

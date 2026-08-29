@@ -111,6 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 validator: _validarNumero,
               ),
               const SizedBox(height: 32),
+              const DescuentoAlmuerzoCard(),
+              const SizedBox(height: 16),
               const AparienciaCard(),
               const SizedBox(height: 16),
               const RecordatoriosCard(),

@@ -10,7 +10,7 @@ import 'prefs_service.dart';
 
 /// Programa y cancela las notificaciones locales de la app: el aviso de
 /// salida (5 minutos antes de la hora estimada) y los recordatorios para
-/// no olvidar marcar la entrada, la salida a almuerzo y el regreso.
+/// no olvidar marcar la entrada, la pausa del almuerzo y la vuelta.
 class NotificationService {
   NotificationService._internal();
   static final NotificationService instance = NotificationService._internal();
@@ -27,7 +27,7 @@ class NotificationService {
   static const String _canalMarcasId = 'torniquete_marcas';
   static const String _canalMarcasNombre = 'Recordatorios de marca';
   static const String _canalMarcasDescripcion =
-      'Recuerda marcar la entrada, la salida a almuerzo y el regreso';
+      'Recuerda marcar la entrada, la pausa del almuerzo y la vuelta';
 
   /// Cuántas citas futuras se dejan programadas por recordatorio. Dos
   /// semanas laborales cubren de sobra cualquier racha sin abrir la app.
@@ -50,11 +50,11 @@ class NotificationService {
     ),
     RecordatorioTipo.salidaAlmuerzo: (
       'Hora de almorzar',
-      'Marca la salida a almuerzo: sin ella la mañana se sigue contando.',
+      'Marca la pausa: sin ella el día se sigue contando como trabajado.',
     ),
     RecordatorioTipo.regresoAlmuerzo: (
       'De vuelta al trabajo',
-      'Marca el regreso: es lo que fija tu hora estimada de salida.',
+      'Continúa la jornada: la pausa corre hasta que la cierres.',
     ),
   };
 

@@ -7,6 +7,10 @@
          para dejar evidencia de donde se registro cada marca. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Opcional: solo se usa si el usuario activa "Avisarme al llegar" en
+         Ajustes. Desde Android 10 una geocerca solo dispara con la ubicacion
+         concedida "todo el tiempo", que es lo que pide este permiso. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <application
         android:label="Torniquete"
         android:name="${applicationName}"
@@ -48,6 +52,21 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+        <!-- Vigilancia de llegada a la sede: recibe el aviso del sistema
+             cuando el telefono lleva un rato dentro del radio configurado, el
+             "ahora no" del propio aviso, y el arranque del telefono, que borra
+             las geocercas registradas y obliga a volver a pedirlas.
+             exported="false": todos los intents que atiende los envia el
+             sistema o la propia app. -->
+        <receiver
+            android:name=".GeocercaReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
         <!-- Widget de la pantalla de inicio: muestra el progreso del dia y la

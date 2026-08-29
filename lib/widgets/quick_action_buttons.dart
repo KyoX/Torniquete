@@ -1,22 +1,28 @@
 import 'package:flutter/material.dart';
 
-/// 3 botones de acción rápida para las marcas del día.
+/// Los tres botones de marca del día.
+///
+/// "Pausa" y "Continuar" sustituyen a la salida y el regreso del almuerzo:
+/// un día puede tener varias interrupciones —una diligencia a media mañana y
+/// luego la comida— y con un solo par de marcas había que elegir cuál de las
+/// dos registrar. Cuál de las pausas fue el almuerzo lo deduce la app por la
+/// hora, así que no hay nada que decidir al marcar.
 class QuickActionButtons extends StatelessWidget {
-  final bool entrada1Habilitada;
-  final bool salida1Habilitada;
-  final bool entrada2Habilitada;
+  final bool entradaHabilitada;
+  final bool pausaHabilitada;
+  final bool continuarHabilitada;
   final VoidCallback onEntrada;
-  final VoidCallback onSalidaComer;
-  final VoidCallback onRegresoComer;
+  final VoidCallback onPausa;
+  final VoidCallback onContinuar;
 
   const QuickActionButtons({
     super.key,
-    required this.entrada1Habilitada,
-    required this.salida1Habilitada,
-    required this.entrada2Habilitada,
+    required this.entradaHabilitada,
+    required this.pausaHabilitada,
+    required this.continuarHabilitada,
     required this.onEntrada,
-    required this.onSalidaComer,
-    required this.onRegresoComer,
+    required this.onPausa,
+    required this.onContinuar,
   });
 
   @override
@@ -27,26 +33,26 @@ class QuickActionButtons extends StatelessWidget {
           child: _ActionButton(
             label: 'Entrada',
             icon: Icons.login,
-            enabled: entrada1Habilitada,
+            enabled: entradaHabilitada,
             onPressed: onEntrada,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _ActionButton(
-            label: 'Salida\nComer',
-            icon: Icons.lunch_dining,
-            enabled: salida1Habilitada,
-            onPressed: onSalidaComer,
+            label: 'Pausa',
+            icon: Icons.pause_circle_outline,
+            enabled: pausaHabilitada,
+            onPressed: onPausa,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: _ActionButton(
-            label: 'Regreso\nComer',
-            icon: Icons.keyboard_return,
-            enabled: entrada2Habilitada,
-            onPressed: onRegresoComer,
+            label: 'Continuar',
+            icon: Icons.play_circle_outline,
+            enabled: continuarHabilitada,
+            onPressed: onContinuar,
           ),
         ),
       ],

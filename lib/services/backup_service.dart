@@ -8,9 +8,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/movimiento_banco.dart';
+import '../models/pausa.dart';
 import '../models/registro.dart';
 import '../models/ubicacion_marca.dart';
+import '../utils/time_utils.dart';
 import 'db_service.dart';
+import 'pausas_service.dart';
 import 'prefs_service.dart';
 import 'reports_service.dart';
 
@@ -58,7 +61,13 @@ class BackupService {
 
   /// Formato del respaldo. Si algún día cambia la estructura de forma
   /// incompatible se sube este número y se migra al leer.
-  static const int versionRespaldo = 1;
+  ///
+  /// La 2 añade el descuento fijo de almuerzo a cada día. Una app vieja no
+  /// tiene esa columna, así que subirlo es lo que hace que rechace el archivo
+  /// con un mensaje claro en vez de reventar a mitad de la restauración. Al
+  /// revés no hay problema: los respaldos de la 1 se siguen leyendo y sus
+  /// días entran sin descuento, que es como se trabajaron.
+  static const int versionRespaldo = 2;
   static const String _marcaArchivo = 'torniquete';
 
   /// Excel en español espera punto y coma como separador y coma decimal;
@@ -106,6 +115,8 @@ class BackupService {
         'salida_almuerzo',
         'entrada_tarde',
         'salida_real',
+        'pausas',
+        'minutos_pausados',
         'horas_trabajadas',
         'minutos_trabajados',
         'meta_minutos',
@@ -127,6 +138,11 @@ class BackupService {
         r.salida1 ?? '',
         r.entrada2 ?? '',
         r.salidaReal ?? '',
+        // Las columnas de almuerzo son la pausa que cayó en la franja del
+        // mediodía; aquí van todas, para que las horas trabajadas se puedan
+        // reconstruir aunque el día tuviera tres.
+        Pausa.serializarLista(r.pausas),
+        '${PausasService.minutosPausados(r.pausas, hasta: _minutos(r.salidaReal))}',
         _horasDecimales(minutos),
         '$minutos',
         '${r.metaMinutos}',
@@ -137,6 +153,11 @@ class BackupService {
       ]));
     }
     return filas.join('\r\n');
+  }
+
+  static int? _minutos(String? hora) {
+    final t = TimeUtils.parseTimeOfDay(hora);
+    return t == null ? null : TimeUtils.toMinutes(t);
   }
 
   static String _fila(List<String> celdas) =>
@@ -198,12 +219,15 @@ class BackupService {
         'meta_lj_horas': await _prefs.getMetaLJ(),
         'meta_viernes_horas': await _prefs.getMetaViernes(),
         'guardar_ubicacion': await _prefs.getGuardarUbicacion(),
+        'descuento_almuerzo_min': await _prefs.getDescuentoAlmuerzo(),
         'sede': {
           'activa': sede.activa,
           'latitud': sede.latitud,
           'longitud': sede.longitud,
           'radio_m': sede.radioMetros,
           'nombre': sede.nombre,
+          'aviso_llegada': sede.avisarAlLlegar,
+          'dias_oficina': sede.diasOficina.toList()..sort(),
         },
       },
       'registros': registros.map((r) => r.toMap()..remove('id')).toList(),
@@ -314,6 +338,10 @@ class BackupService {
     if (guardarUbicacion is bool) {
       await _prefs.setGuardarUbicacion(guardarUbicacion);
     }
+    final descuento = config['descuento_almuerzo_min'];
+    if (descuento is num) {
+      await _prefs.setDescuentoAlmuerzo(descuento.toInt());
+    }
     final sede = config['sede'];
     if (sede is Map) {
       await _prefs.guardarSede(SedeConfig(
@@ -323,8 +351,21 @@ class BackupService {
         radioMetros: (sede['radio_m'] as num?)?.toInt() ??
             SedeConfig.defaultRadioMetros,
         nombre: sede['nombre'] as String?,
+        avisarAlLlegar: sede['aviso_llegada'] == true,
+        diasOficina: _diasOficina(sede['dias_oficina']),
       ));
     }
+  }
+
+  /// Los días de oficina del respaldo. Un respaldo anterior a este ajuste no
+  /// los trae, y entonces vale la semana laboral típica: es lo que el usuario
+  /// tenía de hecho cuando lo generó.
+  static Set<int> _diasOficina(Object? valor) {
+    if (valor is! List) return SedeConfig.diasLaboralesTipicos;
+    return {
+      for (final dia in valor)
+        if (dia is num && dia >= 1 && dia <= 7) dia.toInt(),
+    };
   }
 
   static List<Map<String, Object?>> _mapas(Object? valor) {

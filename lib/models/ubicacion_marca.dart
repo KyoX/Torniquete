@@ -1,10 +1,14 @@
+import '../utils/geo_utils.dart';
+
 /// Ubicación capturada en el momento en que se registró una marca del día.
 /// Sirve como evidencia (por ejemplo, ante una auditoría) de que la persona
 /// estaba en el lugar de trabajo al marcar.
 class UbicacionMarca {
   final int? id;
   final String fecha; // YYYY-MM-DD
-  final String tipo; // entrada1 | salida1 | entrada2 | salidaReal
+  /// Qué marca es, por su clave: ver `ClaveUbicacion`. Solo llevan evidencia
+  /// la entrada, la salida real y las dos horas de la pausa del almuerzo.
+  final String tipo;
   final String hora; // HH:mm de la marca
   final double latitud;
   final double longitud;
@@ -63,4 +67,27 @@ class UbicacionMarca {
       manual: (map['manual'] as int? ?? 0) == 1,
     );
   }
+}
+
+/// Todo lo que se sabe de dónde se registró una marca, en un solo objeto.
+///
+/// Va junto porque las tres cosas se enseñan en el mismo sitio y las tres
+/// pueden faltar a la vez: sin el ajuste de ubicación activado no hay nada
+/// que contar.
+class EvidenciaMarca {
+  final UbicacionMarca? ubicacion;
+
+  /// True mientras el GPS está respondiendo a esta marca en concreto.
+  final bool capturando;
+
+  /// Qué tan lejos de la sede quedó, si la geocerca está configurada.
+  final EvaluacionGeocerca? geocerca;
+
+  const EvidenciaMarca({
+    this.ubicacion,
+    this.capturando = false,
+    this.geocerca,
+  });
+
+  static const EvidenciaMarca ninguna = EvidenciaMarca();
 }

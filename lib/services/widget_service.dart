@@ -3,6 +3,8 @@ import 'package:home_widget/home_widget.dart';
 
 import '../models/registro.dart';
 import '../utils/time_utils.dart';
+import 'pausas_service.dart';
+import 'reports_service.dart';
 
 /// Cuánto se ve el fondo de pantalla a través del widget de inicio.
 ///
@@ -50,7 +52,7 @@ class WidgetResumen {
   /// Frase corta de estado: "Trabajando", "En almuerzo", "Festivo"...
   final String estado;
 
-  /// Las cuatro marcas del día en una línea.
+  /// La entrada, las pausas y la salida del día en una línea.
   final String marcas;
 
   /// Hora estimada (o real) de salida, ya formateada.
@@ -112,7 +114,7 @@ class WidgetService {
     if (registro == null) {
       return WidgetResumen(
         estado: 'Sin datos de hoy',
-        marcas: '--:-- · --:-- · --:-- · --:--',
+        marcas: '--:-- · --:-- · --:--',
         salida: 'Abre la app para empezar',
         minutosBase: 0,
         abiertoDesdeMinutos: -1,
@@ -121,59 +123,64 @@ class WidgetService {
       );
     }
 
-    final e1 = TimeUtils.parseTimeOfDay(registro.entrada1);
-    final s1 = TimeUtils.parseTimeOfDay(registro.salida1);
-    final e2 = TimeUtils.parseTimeOfDay(registro.entrada2);
-    final sr = TimeUtils.parseTimeOfDay(registro.salidaReal);
+    final minutosAhora = TimeUtils.toMinutes(TimeOfDay.fromDateTime(ahora));
+    final entrada = TimeUtils.parseTimeOfDay(registro.entrada1);
+    final salida = TimeUtils.parseTimeOfDay(registro.salidaReal);
+    final pausaAbierta = registro.pausaAbierta;
 
-    var base = 0;
-    var abiertoDesde = -1;
+    // El tramo abierto arranca donde terminó la última pausa, o en la propia
+    // entrada si todavía no se ha parado. No hay ninguno si el día no ha
+    // empezado, si ya se cerró o si se está de pausa ahora mismo.
+    int? abiertoDesde;
+    if (entrada != null && salida == null && pausaAbierta == null) {
+      abiertoDesde = registro.pausas.fold<int>(
+        TimeUtils.toMinutes(entrada),
+        (ultimo, pausa) {
+          final fin = pausa.finMinutos;
+          return fin != null && fin > ultimo ? fin : ultimo;
+        },
+      );
+    }
 
-    // Mismo criterio que ReportsService.minutosEnVivo: la mañana solo corre
-    // en vivo mientras no exista ni la salida a almuerzo ni el regreso.
-    if (e1 != null) {
-      if (s1 != null) {
-        final manana = TimeUtils.toMinutes(s1) - TimeUtils.toMinutes(e1);
-        if (manana > 0) base += manana;
-      } else if (e2 == null) {
-        abiertoDesde = TimeUtils.toMinutes(e1);
-      }
-    }
-    if (e2 != null) {
-      if (sr != null) {
-        final tarde = TimeUtils.toMinutes(sr) - TimeUtils.toMinutes(e2);
-        if (tarde > 0) base += tarde;
-      } else {
-        abiertoDesde = TimeUtils.toMinutes(e2);
-      }
-    }
+    // Lo ya consolidado llega hasta donde arranca el tramo abierto; si no hay
+    // ninguno, hasta el cierre del día o hasta ahora mismo si se está de
+    // pausa. Así el widget solo tiene que sumar los minutos corridos desde
+    // [abiertoDesde] sin conocer ninguna regla de la jornada.
+    //
+    // Con tramo abierto el total va sin recortar en cero, a diferencia del
+    // resto de la app: el widget le suma después los minutos corridos, y
+    // recortarlo aquí le regalaría al día el almuerzo que la empresa
+    // descuenta y todavía no se ha tomado.
+    final base = abiertoDesde != null
+        ? abiertoDesde -
+            TimeUtils.toMinutes(entrada!) -
+            PausasService.minutosPausados(registro.pausas, hasta: abiertoDesde) -
+            ReportsService.descuentoPendiente(registro, minutosAhora: minutosAhora)
+        : ReportsService.minutosEnVivo(registro, minutosAhora);
 
     return WidgetResumen(
-      estado: _estado(registro, e1: e1, s1: s1, e2: e2, sr: sr),
-      marcas: [registro.entrada1, registro.salida1, registro.entrada2,
-              registro.salidaReal]
-          .map(TimeUtils.formatHHmm)
-          .join(' · '),
-      salida: _salida(registro, sr: sr, horaEstimadaSalida: horaEstimadaSalida),
+      estado: _estado(registro),
+      marcas: [
+        TimeUtils.formatHHmm(registro.entrada1),
+        PausasService.resumen(registro.pausas, hasta: minutosAhora),
+        TimeUtils.formatHHmm(registro.salidaReal),
+      ].join(' · '),
+      salida: _salida(registro, sr: salida, horaEstimadaSalida: horaEstimadaSalida),
       minutosBase: base,
-      abiertoDesdeMinutos: abiertoDesde,
+      abiertoDesdeMinutos: abiertoDesde ?? -1,
       metaMinutos: registro.metaEfectivaMinutos,
       actualizado: actualizado,
     );
   }
 
-  static String _estado(
-    Registro registro, {
-    TimeOfDay? e1,
-    TimeOfDay? s1,
-    TimeOfDay? e2,
-    TimeOfDay? sr,
-  }) {
+  static String _estado(Registro registro) {
     if (registro.tipoDia.esJustificado) return registro.tipoDia.etiqueta;
-    if (sr != null) return 'Jornada cerrada';
-    if (e2 != null) return 'Trabajando (tarde)';
-    if (s1 != null) return 'En almuerzo';
-    if (e1 != null) return 'Trabajando';
+    if (registro.salidaReal != null) return 'Jornada cerrada';
+    final abierta = registro.pausaAbierta;
+    if (abierta != null) {
+      return abierta == registro.almuerzo ? 'En almuerzo' : 'En pausa';
+    }
+    if (registro.entrada1 != null) return 'Trabajando';
     return 'Sin marcar';
   }
 
@@ -187,7 +194,7 @@ class WidgetService {
     if (horaEstimadaSalida != null) {
       return 'Salida estimada ${TimeUtils.formatTimeOfDay(horaEstimadaSalida)}';
     }
-    return 'Marca el regreso del almuerzo';
+    return 'Marca tu entrada para empezar';
   }
 
   /// Escribe el resumen y le pide a Android que redibuje el widget.

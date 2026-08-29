@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/services/asuetos_service.dart';
@@ -17,8 +18,7 @@ Registro reg(
     Registro(
       fecha: fecha,
       entrada1: e1,
-      salida1: s1,
-      entrada2: e2,
+      pausas: [if (s1 != null) Pausa(inicio: s1, fin: e2)],
       salidaReal: sr,
       metaMinutos: meta,
       tipoDia: tipo,

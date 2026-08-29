@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
+import 'package:torniquete/services/reports_service.dart';
 import 'package:torniquete/services/widget_service.dart';
 
 void main() {
@@ -24,8 +26,7 @@ void main() {
       Registro(
         fecha: '2026-08-21',
         entrada1: e1,
-        salida1: s1,
-        entrada2: e2,
+        pausas: [if (s1 != null) Pausa(inicio: s1, fin: e2)],
         salidaReal: sr,
         metaMinutos: 510,
         tipoDia: tipo,
@@ -81,15 +82,54 @@ void main() {
 
   test('las marcas se muestran en el orden del día', () {
     final resumen = resumir(dia(e1: '08:00', s1: '12:00'));
-    expect(resumen.marcas, '08:00 · 12:00 · --:-- · --:--');
+    expect(resumen.marcas, '08:00 · 12:00–... · --:--');
     expect(resumen.actualizado, '14:05');
   });
 
-  test('una mañana inconsistente no cuenta el almuerzo como trabajado', () {
-    // Sin salida a almuerzo pero con regreso: mismo criterio que los
-    // reportes, la mañana no aporta nada.
-    final resumen = resumir(dia(e1: '08:00', e2: '13:00'));
-    expect(resumen.minutosBase, 0);
-    expect(resumen.abiertoDesdeMinutos, 13 * 60);
+  test('con varias pausas el tramo abierto arranca en la última', () {
+    final resumen = resumir(
+      Registro(
+        fecha: '2026-08-28',
+        entrada1: '08:00',
+        pausas: const [
+          Pausa(inicio: '09:30', fin: '10:00'),
+          Pausa(inicio: '12:00', fin: '12:45'),
+        ],
+        metaMinutos: 510,
+      ),
+    );
+    // Las dos pausas suman 1h 15m, así que a las 12:45 se llevaban 3h 30m.
+    expect(resumen.minutosBase, 210);
+    expect(resumen.abiertoDesdeMinutos, 12 * 60 + 45);
+    // Y el widget suma solos los minutos corridos desde entonces.
+    expect(
+      resumen.minutosBase + (14 * 60 + 5 - resumen.abiertoDesdeMinutos),
+      ReportsService.minutosEnVivo(
+        Registro(
+          fecha: '2026-08-28',
+          entrada1: '08:00',
+          pausas: const [
+            Pausa(inicio: '09:30', fin: '10:00'),
+            Pausa(inicio: '12:00', fin: '12:45'),
+          ],
+          metaMinutos: 510,
+        ),
+        14 * 60 + 5,
+      ),
+    );
+  });
+
+  test('una pausa en curso congela el reloj del widget', () {
+    final resumen = resumir(
+      Registro(
+        fecha: '2026-08-28',
+        entrada1: '08:00',
+        pausas: const [Pausa(inicio: '12:00')],
+        metaMinutos: 510,
+      ),
+    );
+    expect(resumen.estado, 'En almuerzo');
+    expect(resumen.hayTramoAbierto, isFalse);
+    expect(resumen.minutosBase, 240);
   });
 }

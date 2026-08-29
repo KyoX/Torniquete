@@ -20,7 +20,7 @@ class DbService {
 
   /// Versión actual del esquema. Subirla obliga a añadir su paso en
   /// [migrarEsquema].
-  static const int versionEsquema = 4;
+  static const int versionEsquema = 6;
 
   static const String _nombreArchivo = 'torniquete.db';
 
@@ -48,11 +48,13 @@ class DbService {
         entrada_1 TEXT,
         salida_1 TEXT,
         entrada_2 TEXT,
+        pausas TEXT,
         salida_real TEXT,
         meta_minutos INTEGER NOT NULL,
         horas_cumplidas INTEGER NOT NULL DEFAULT 0,
         tipo_dia TEXT NOT NULL DEFAULT 'normal',
-        nota TEXT
+        nota TEXT,
+        descuento_almuerzo_min INTEGER NOT NULL DEFAULT 0
       )
     ''');
     await _crearTablaUbicaciones(db);
@@ -63,7 +65,7 @@ class DbService {
   ///
   /// Los pasos son acumulativos y van en orden, así que una instalación vieja
   /// que se salte varias versiones los aplica todos de corrido (una v1 llega
-  /// a la v4 encadenando los tres). sqflite envuelve esto en una transacción:
+  /// a la v6 encadenando los cinco). sqflite envuelve esto en una transacción:
   /// si un paso falla, la base queda como estaba en lugar de a medio migrar.
   static Future<void> migrarEsquema(
     Database db,
@@ -86,6 +88,26 @@ class DbService {
       );
       await db.execute('ALTER TABLE registros ADD COLUMN nota TEXT');
       await _crearTablaMovimientos(db);
+    }
+    if (oldVersion < 5) {
+      // Cero para los días ya guardados: se trabajaron bajo la regla anterior
+      // y reinterpretarlos ahora les cambiaría las horas a toro pasado.
+      await db.execute(
+        'ALTER TABLE registros ADD COLUMN descuento_almuerzo_min '
+        'INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (oldVersion < 6) {
+      // Las pausas del día en una sola columna de texto. Se rellena con el
+      // almuerzo que ya estaba guardado en salida_1/entrada_2, que a partir
+      // de aquí pasan a ser una proyección de la pausa del almuerzo y no el
+      // dato bueno.
+      await db.execute('ALTER TABLE registros ADD COLUMN pausas TEXT');
+      await db.execute(
+        "UPDATE registros SET pausas = salida_1 || '-' || "
+        "COALESCE(entrada_2, '') "
+        "WHERE salida_1 IS NOT NULL AND salida_1 <> ''",
+      );
     }
   }
 

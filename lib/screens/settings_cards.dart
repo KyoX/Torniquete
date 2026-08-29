@@ -3,9 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_provider.dart';
+import '../providers/registro_provider.dart';
 import '../services/asuetos_service.dart';
 import '../services/backup_service.dart';
 import '../services/db_service.dart';
+import '../services/descuento_almuerzo_service.dart';
+import '../services/geocerca_service.dart';
 import '../services/location_service.dart';
 import '../services/prefs_service.dart';
 import '../services/widget_service.dart';
@@ -13,6 +16,246 @@ import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import 'reports/export_report_sheet.dart';
+
+/// Almuerzo que la empresa descuenta salgas o no a comer.
+///
+/// Apagado por defecto (cero minutos): sin configurarlo la app cuenta el
+/// almuerzo que se tomó de verdad, que es como funcionaba antes.
+class DescuentoAlmuerzoCard extends StatefulWidget {
+  const DescuentoAlmuerzoCard({super.key});
+
+  @override
+  State<DescuentoAlmuerzoCard> createState() => _DescuentoAlmuerzoCardState();
+}
+
+class _DescuentoAlmuerzoCardState extends State<DescuentoAlmuerzoCard> {
+  /// Valor que se está eligiendo con el dedo puesto sobre el deslizador. Se
+  /// guarda al soltar y no en cada paso: el ajuste reescribe el día en curso.
+  int? _arrastrado;
+
+  bool _revisando = false;
+
+  static String _legible(int minutos) {
+    if (minutos <= 0) return 'Sin descuento fijo';
+    if (minutos < 60) return '$minutos min';
+    final horas = minutos ~/ 60;
+    final resto = minutos % 60;
+    return resto == 0 ? '$horas h' : '$horas h $resto min';
+  }
+
+  void _avisar(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  /// Recalcula los días ya guardados con el descuento vigente.
+  ///
+  /// Va detrás de una confirmación que dice cuánto se mueve el banco de horas
+  /// porque reescribe el pasado, que es justo lo que la app evita hacer sola:
+  /// cada día se sella con la regla que estaba vigente cuando se trabajó.
+  Future<void> _aplicarAlHistorial() async {
+    final appProvider = context.read<AppProvider>();
+    final descuento = appProvider.descuentoAlmuerzoMinutos;
+
+    setState(() => _revisando = true);
+    try {
+      final registros = await DbService.instance.getTodosLosRegistros();
+      final revision = DescuentoAlmuerzoService.revisar(
+        registros,
+        descuento: descuento,
+        hoy: RegistroProvider.fechaHoy(),
+      );
+      if (!mounted) return;
+
+      if (revision.sinTrabajo) {
+        _avisar('Todos los días guardados ya usan este descuento.');
+        return;
+      }
+
+      final confirmado = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Aplicar al historial'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_encabezado(revision.aSellar.length, descuento)),
+                const SizedBox(height: 12),
+                Text(_resumenDelCambio(revision)),
+                if (revision.cambios.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  for (final cambio in revision.cambios.take(_maxPrevisualizados))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '${_fechaLegible(cambio.registro.fecha)}: '
+                        '${TimeUtils.formatDurationMinutes(cambio.minutosAntes)} '
+                        '→ '
+                        '${TimeUtils.formatDurationMinutes(cambio.minutosDespues)}',
+                      ),
+                    ),
+                  if (revision.cambios.length > _maxPrevisualizados)
+                    Text(
+                      'y ${revision.cambios.length - _maxPrevisualizados} días más.',
+                    ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.tonal(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Recalcular'),
+            ),
+          ],
+        ),
+      );
+      if (confirmado != true) return;
+
+      final dias = await DescuentoAlmuerzoService.aplicar(revision);
+      if (!mounted) return;
+      _avisar(dias == 1
+          ? 'Se recalculó un día del historial.'
+          : 'Se recalcularon $dias días del historial.');
+    } finally {
+      if (mounted) setState(() => _revisando = false);
+    }
+  }
+
+  /// Qué se va a recalcular. Poner el descuento en cero no es "recalcular con
+  /// nada": es dejar de descontar, y así se dice.
+  static String _encabezado(int dias, int descuento) {
+    final uno = dias == 1;
+    final cuantos = uno ? 'Un día guardado' : '$dias días guardados';
+    return descuento <= 0
+        ? '$cuantos ${uno ? 'dejará' : 'dejarán'} de descontar un almuerzo '
+            'fijo.'
+        : '$cuantos ${uno ? 'se recalculará' : 'se recalcularán'} descontando '
+            '${_legible(descuento)} de almuerzo.';
+  }
+
+  /// Cuántos días cambian de verdad y hacia dónde se mueve el banco. Es el
+  /// número que importa: el resto solo cambia de etiqueta.
+  static String _resumenDelCambio(RevisionDescuento revision) {
+    if (revision.cambios.isEmpty) {
+      return 'Ninguno cambia de horas: son días en blanco, justificados o con '
+          'un almuerzo que ya duraba más que el descuento. Se actualizan de '
+          'todos modos para que se recalculen bien si los editas.';
+    }
+    final total = revision.diferenciaMinutos;
+    final cuantos = revision.cambios.length == 1
+        ? 'Uno cambia de horas'
+        : '${revision.cambios.length} cambian de horas';
+    return '$cuantos y tu banco ${total < 0 ? 'baja' : 'sube'} '
+        '${TimeUtils.formatDurationMinutes(total.abs())}.';
+  }
+
+  static const int _maxPrevisualizados = 8;
+
+  static String _fechaLegible(String fecha) =>
+      DateFormat("d 'de' MMM 'de' y", 'es').format(DateTime.parse(fecha));
+
+  @override
+  Widget build(BuildContext context) {
+    final appProvider = context.watch<AppProvider>();
+    final minutos = _arrastrado ?? appProvider.descuentoAlmuerzoMinutos;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.restaurant_outlined),
+                const SizedBox(width: 10),
+                Text(
+                  'Almuerzo descontado',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Hay empresas que descuentan un almuerzo fijo salgas o no a '
+              'comer. Con esto configurado la app lo resta del día aunque no '
+              'marques la salida a almorzar, así la hora de salida deja de '
+              'adelantarse por no ir a comer.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _legible(minutos),
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            Slider(
+              value: minutos
+                  .clamp(0, PrefsService.maxDescuentoAlmuerzo)
+                  .toDouble(),
+              min: 0,
+              max: PrefsService.maxDescuentoAlmuerzo.toDouble(),
+              divisions: PrefsService.maxDescuentoAlmuerzo ~/ 5,
+              label: _legible(minutos),
+              onChanged: (valor) =>
+                  setState(() => _arrastrado = valor.round()),
+              onChangeEnd: (valor) async {
+                await appProvider.setDescuentoAlmuerzo(valor.round());
+                if (mounted) setState(() => _arrastrado = null);
+              },
+            ),
+            Text(
+              minutos <= 0
+                  ? 'Se cuenta el almuerzo que realmente tomes: la pausa que '
+                      'hagas entre las 11:30 y las 2.'
+                  : 'Es un mínimo: si almuerzas más de ${_legible(minutos)}, '
+                      'se descuenta el tiempo que de verdad tomaste. Si '
+                      'almuerzas menos —o no sales— se descuenta igual. Solo '
+                      'cuenta la pausa que hagas entre las 11:30 y las 2; una '
+                      'salida a media mañana es tiempo fuera, pero no es el '
+                      'almuerzo.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Cambiarlo afecta al día de hoy y a los que registres después. '
+              'Los días ya guardados conservan el descuento con el que se '
+              'trabajaron, igual que conservan su meta de horas.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _revisando ? null : _aplicarAlHistorial,
+              icon: _revisando
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.history_toggle_off),
+              label: const Text('Aplicar al historial'),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Si tu empresa ya descontaba el almuerzo antes de que '
+              'configuraras esto, el historial quedó con horas de más. Esto '
+              'lo recalcula, diciéndote primero cuánto se mueve tu banco de '
+              'horas. No toca el día de hoy, que ya sigue el ajuste.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// Deja elegir si la app se ve clara, oscura o como esté el teléfono, y
 /// cuánto se transparenta el widget de la pantalla de inicio.
@@ -98,7 +341,7 @@ class AparienciaCard extends StatelessWidget {
   }
 }
 
-/// Avisos para no olvidar marcar la entrada, la salida a almuerzo y el
+/// Avisos para no olvidar marcar la entrada, la pausa del almuerzo y el
 /// regreso. Apagados por defecto: son útiles solo si el horario es estable.
 class RecordatoriosCard extends StatelessWidget {
   const RecordatoriosCard({super.key});
@@ -180,8 +423,45 @@ class SedeCard extends StatefulWidget {
   State<SedeCard> createState() => _SedeCardState();
 }
 
-class _SedeCardState extends State<SedeCard> {
+class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
   bool _capturando = false;
+  bool _procesandoLlegada = false;
+
+  /// Radio que se está eligiendo con el dedo puesto sobre el deslizador.
+  int? _radioArrastrado;
+
+  /// Lo que Android dice que está vigilando de verdad, que no siempre
+  /// coincide con lo que pide el interruptor.
+  EstadoGeocerca _vigilancia = EstadoGeocerca.apagada;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _revisarVigilancia();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// El permiso de "todo el tiempo" se concede fuera de la app, en los
+  /// ajustes de Android. Al volver hay que reponer la geocerca y releer el
+  /// estado, o el usuario vería el permiso dado y la vigilancia apagada.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _revisarVigilancia();
+  }
+
+  Future<void> _revisarVigilancia() async {
+    if (!mounted) return;
+    await context.read<AppProvider>().resincronizarGeocerca();
+    final estado = await GeocercaService.instance.estado();
+    if (!mounted) return;
+    setState(() => _vigilancia = estado);
+  }
 
   void _avisar(String mensaje, {SnackBarAction? accion}) {
     if (!mounted) return;
@@ -242,6 +522,110 @@ class _SedeCardState extends State<SedeCard> {
     } finally {
       if (mounted) setState(() => _capturando = false);
     }
+  }
+
+  /// Enciende o apaga el aviso de llegada.
+  ///
+  /// Encenderlo pide la ubicación "todo el tiempo", que es la única con la
+  /// que Android dispara una geocerca teniendo la app cerrada. Si el usuario
+  /// solo concede "mientras se usa la app" la preferencia se guarda igual:
+  /// así el ajuste recuerda lo que pidió y la vigilancia arranca sola en
+  /// cuanto suba el permiso desde los ajustes del sistema.
+  Future<void> _cambiarAvisoLlegada(bool valor) async {
+    final appProvider = context.read<AppProvider>();
+    if (!valor) {
+      await appProvider.guardarSede(
+        appProvider.sede.copyWith(avisarAlLlegar: false),
+      );
+      await _revisarVigilancia();
+      _avisar('Ya no se te avisará al llegar a la sede.');
+      return;
+    }
+
+    setState(() => _procesandoLlegada = true);
+    try {
+      final permiso = await LocationService.instance.solicitarPermisoDeFondo();
+      if (!mounted) return;
+      final vigilando = await appProvider.guardarSede(
+        appProvider.sede.copyWith(avisarAlLlegar: true),
+      );
+      if (!mounted) return;
+      await _revisarVigilancia();
+      if (!mounted) return;
+
+      switch (permiso) {
+        case PermisoDeFondo.concedido:
+          _avisar(vigilando
+              ? 'Listo: al llegar a la sede te preguntaré si marco.'
+              : 'Android no aceptó vigilar la sede. Revisa que los servicios '
+                  'de Google Play estén al día.');
+        case PermisoDeFondo.soloEnUso:
+          _avisar(
+            'Falta conceder la ubicación como "Permitir todo el tiempo": sin '
+            'ella Android no avisa con la app cerrada.',
+            accion: SnackBarAction(
+              label: 'Ajustes',
+              onPressed: LocationService.instance.abrirAjustesDeLaApp,
+            ),
+          );
+        case PermisoDeFondo.servicioApagado:
+          _avisar(
+            'El GPS del teléfono está apagado.',
+            accion: SnackBarAction(
+              label: 'Activar',
+              onPressed: LocationService.instance.abrirAjustesDeUbicacion,
+            ),
+          );
+        case PermisoDeFondo.sinPermiso:
+          _avisar(
+            'Sin permiso de ubicación no se puede vigilar la llegada.',
+            accion: SnackBarAction(
+              label: 'Ajustes',
+              onPressed: LocationService.instance.abrirAjustesDeLaApp,
+            ),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _procesandoLlegada = false);
+    }
+  }
+
+  /// Enciende o apaga un día de oficina. Guardar la sede vuelve a hablar con
+  /// Android, que es lo que hace falta cuando la semana se queda sin días —se
+  /// retira la geocerca— o recupera el primero.
+  Future<void> _cambiarDiaOficina(int dia, bool elegido) async {
+    final appProvider = context.read<AppProvider>();
+    final dias = {...appProvider.sede.diasOficina};
+    if (elegido) {
+      dias.add(dia);
+    } else {
+      dias.remove(dia);
+    }
+    await appProvider.guardarSede(
+      appProvider.sede.copyWith(diasOficina: dias),
+    );
+    await _revisarVigilancia();
+  }
+
+  /// Qué está pasando de verdad con la vigilancia, dicho en una línea.
+  String _estadoLlegada(SedeConfig sede) {
+    if (!sede.tieneCoordenadas) return 'Primero guarda dónde queda la sede.';
+    if (!sede.avisarAlLlegar) {
+      return 'Al quedarte dentro del radio, una notificación te pregunta si '
+          'marcas la entrada o si continúas una pausa que dejaste abierta.';
+    }
+    if (sede.diasOficina.isEmpty) {
+      return 'No hay ningún día de oficina marcado, así que no se avisará.';
+    }
+    if (_vigilancia.vigilando) {
+      return 'Android está vigilando la sede: el aviso llega aunque la app '
+          'esté cerrada.';
+    }
+    if (!_vigilancia.permisoDeFondo) {
+      return 'Falta la ubicación "Permitir todo el tiempo". Sin ella Android '
+          'no despierta la app al llegar.';
+    }
+    return 'Pedido, pero el sistema todavía no confirma la vigilancia.';
   }
 
   Future<void> _editarNombre() async {
@@ -325,7 +709,7 @@ class _SedeCardState extends State<SedeCard> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                if (_capturando)
+                if (_capturando || _procesandoLlegada)
                   const SizedBox(
                     height: 18,
                     width: 18,
@@ -348,6 +732,61 @@ class _SedeCardState extends State<SedeCard> {
                     : 'Primero guarda dónde queda la sede.',
               ),
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: sede.avisarAlLlegar,
+              onChanged: sede.tieneCoordenadas && !_procesandoLlegada
+                  ? _cambiarAvisoLlegada
+                  : null,
+              title: const Text('Avisarme al llegar para marcar'),
+              subtitle: Text(_estadoLlegada(sede)),
+            ),
+            if (sede.avisarAlLlegar) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Días que vas a la sede',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var dia = 1; dia <= 7; dia++)
+                    FilterChip(
+                      label: Text(SedeConfig.abreviaturasDias[dia - 1]),
+                      selected: sede.diasOficina.contains(dia),
+                      onSelected: (elegido) => _cambiarDiaOficina(dia, elegido),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                sede.diasOficina.isEmpty
+                    ? 'Sin ningún día marcado no se avisará nunca. La '
+                        'vigilancia queda apagada hasta que marques alguno.'
+                    : '${sede.diasOficinaLegible}. Los demás días puedes pasar '
+                        'por la sede sin que se te pregunte nada.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+            ],
+            if (sede.avisarAlLlegar && !_vigilancia.permisoDeFondo)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: LocationService.instance.abrirAjustesDeLaApp,
+                  icon: const Icon(Icons.lock_open, size: 18),
+                  label: const Text('Permitir ubicación todo el tiempo'),
+                ),
+              ),
+            if (sede.avisarAlLlegar)
+              Text(
+                'Se pregunta una sola vez al día por cada marca, y solo tras '
+                'un rato dentro del radio, para que pasar cerca de camino a '
+                'otro sitio no gaste el aviso.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             if (sede.tieneCoordenadas) ...[
               ListTile(
                 contentPadding: EdgeInsets.zero,
@@ -366,21 +805,28 @@ class _SedeCardState extends State<SedeCard> {
                 ),
               ),
               Text(
-                'Radio: ${sede.radioMetros} m',
+                'Radio: ${_radioArrastrado ?? sede.radioMetros} m',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               Slider(
-                value: sede.radioMetros
+                value: (_radioArrastrado ?? sede.radioMetros)
                     .clamp(SedeConfig.minRadioMetros, SedeConfig.maxRadioMetros)
                     .toDouble(),
                 min: SedeConfig.minRadioMetros.toDouble(),
                 max: SedeConfig.maxRadioMetros.toDouble(),
                 divisions:
                     (SedeConfig.maxRadioMetros - SedeConfig.minRadioMetros) ~/ 50,
-                label: '${sede.radioMetros} m',
-                onChanged: (valor) => appProvider.guardarSede(
-                  sede.copyWith(radioMetros: valor.round()),
-                ),
+                label: '${_radioArrastrado ?? sede.radioMetros} m',
+                // Mientras se arrastra el valor solo vive aquí: guardar en
+                // cada paso volvería a registrar la geocerca decenas de veces
+                // por un gesto, y el sistema solo necesita la definitiva.
+                onChanged: (valor) =>
+                    setState(() => _radioArrastrado = valor.round()),
+                onChangeEnd: (valor) async {
+                  await appProvider
+                      .guardarSede(sede.copyWith(radioMetros: valor.round()));
+                  if (mounted) setState(() => _radioArrastrado = null);
+                },
               ),
               Text(
                 'Dentro de un edificio el GPS se desvía con facilidad: un '

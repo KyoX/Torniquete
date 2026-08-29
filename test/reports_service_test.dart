@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torniquete/models/movimiento_banco.dart';
+import 'package:torniquete/models/pausa.dart';
 import 'package:torniquete/models/registro.dart';
 import 'package:torniquete/models/tipo_dia.dart';
 import 'package:torniquete/services/reports_service.dart';
@@ -16,8 +17,7 @@ Registro reg(
   return Registro(
     fecha: fecha,
     entrada1: e1,
-    salida1: s1,
-    entrada2: e2,
+    pausas: [if (s1 != null) Pausa(inicio: s1, fin: e2)],
     salidaReal: sr,
     metaMinutos: meta,
     tipoDia: tipo,
@@ -87,12 +87,31 @@ void main() {
       expect(ReportsService.minutosEnVivo(hoy, dosPm), 300);
     });
 
-    test('una mañana sin salida a almuerzo no se computa', () {
-      // Estado inconsistente (solo alcanzable editando a mano): se cuenta la
-      // tarde, igual que hacen el historial y los reportes.
-      final hoy = reg('2026-08-21', e1: '08:00', e2: '13:00');
-      expect(ReportsService.minutosEnVivo(hoy, dosPm), 60);
-      expect(ReportsService.minutosDesdeMarcas(hoy), 0);
+    test('cada pausa descuenta lo que duró', () {
+      final hoy = Registro(
+        fecha: '2026-08-21',
+        entrada1: '08:00',
+        pausas: const [
+          Pausa(inicio: '09:30', fin: '10:00'),
+          Pausa(inicio: '12:00', fin: '12:45'),
+        ],
+        metaMinutos: 510,
+      );
+      // De 08:00 a 14:00 son seis horas menos 1h 15m de pausas.
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 285);
+    });
+
+    test('la pausa en curso congela el reloj', () {
+      final hoy = Registro(
+        fecha: '2026-08-21',
+        entrada1: '08:00',
+        pausas: const [Pausa(inicio: '12:00')],
+        metaMinutos: 510,
+      );
+      expect(ReportsService.minutosEnVivo(hoy, dosPm), 240);
+      expect(ReportsService.minutosEnVivo(hoy, 15 * 60), 240);
+      // Y sin salida real el día se cierra donde empezó la pausa.
+      expect(ReportsService.minutosDesdeMarcas(hoy), 240);
     });
 
     test('con salida real el total ya no depende de la hora actual', () {

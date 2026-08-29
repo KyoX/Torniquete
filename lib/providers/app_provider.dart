@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/geocerca_service.dart';
 import '../services/notification_service.dart';
 import '../services/prefs_service.dart';
 import '../services/widget_service.dart';
@@ -28,6 +29,10 @@ class AppProvider extends ChangeNotifier {
   /// Si está activo, cada marca guarda también dónde se registró.
   bool guardarUbicacion = false;
 
+  /// Minutos de almuerzo que la empresa descuenta aunque no se tomen. Cero
+  /// deja el cálculo como estaba: cuenta el almuerzo que se tomó de verdad.
+  int descuentoAlmuerzoMinutos = 0;
+
   /// Avisos para no olvidar marcar, por tipo de marca.
   Map<RecordatorioTipo, RecordatorioConfig> recordatorios = const {};
 
@@ -49,6 +54,7 @@ class AppProvider extends ChangeNotifier {
     metaLJHoras = await _prefsService.getMetaLJ();
     metaViernesHoras = await _prefsService.getMetaViernes();
     guardarUbicacion = await _prefsService.getGuardarUbicacion();
+    descuentoAlmuerzoMinutos = await _prefsService.getDescuentoAlmuerzo();
     recordatorios = await _prefsService.getRecordatorios();
     sede = await _prefsService.getSede();
     asuetosActivos = await _prefsService.getAsuetosActivos();
@@ -57,7 +63,18 @@ class AppProvider extends ChangeNotifier {
     fondoWidget = await _prefsService.getFondoWidget();
     cargado = true;
     notifyListeners();
+    // Android olvida las geocercas al reiniciarse y al actualizar la app. El
+    // receptor de arranque las repone, pero no todos los fabricantes lo
+    // entregan, así que abrir la app también las deja en su sitio.
+    await resincronizarGeocerca();
   }
+
+  /// Vuelve a pedirle al sistema la vigilancia de llegada con la sede que hay
+  /// guardada ahora. Es idempotente y barato, así que se puede llamar cada
+  /// vez que la app vuelve a primer plano: es lo que hace que conceder el
+  /// permiso desde los ajustes de Android surta efecto sin reiniciar nada.
+  Future<bool> resincronizarGeocerca() =>
+      GeocercaService.instance.configurarSede(sede);
 
   Future<void> guardarConfiguracion({
     required String nombre,
@@ -73,6 +90,15 @@ class AppProvider extends ChangeNotifier {
     this.metaLJHoras = metaLJHoras;
     this.metaViernesHoras = metaViernesHoras;
     cargado = true;
+    notifyListeners();
+  }
+
+  /// Cambia el descuento fijo de almuerzo. Solo afecta a los días que se
+  /// registren a partir de ahora: cada día guarda el descuento con el que se
+  /// trabajó, igual que guarda su meta.
+  Future<void> setDescuentoAlmuerzo(int minutos) async {
+    await _prefsService.setDescuentoAlmuerzo(minutos);
+    descuentoAlmuerzoMinutos = await _prefsService.getDescuentoAlmuerzo();
     notifyListeners();
   }
 
@@ -103,16 +129,22 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> guardarSede(SedeConfig nueva) async {
+  /// Guarda la sede y le pasa al sistema la zona a vigilar. Devuelve true si
+  /// al terminar Android está vigilando de verdad: con el aviso de llegada
+  /// apagado, sin coordenadas o sin el permiso de fondo devuelve false, que
+  /// es lo que la pantalla necesita para no prometer lo que no hay.
+  Future<bool> guardarSede(SedeConfig nueva) async {
     await _prefsService.guardarSede(nueva);
     sede = await _prefsService.getSede();
     notifyListeners();
+    return resincronizarGeocerca();
   }
 
   Future<void> borrarSede() async {
     await _prefsService.borrarSede();
     sede = await _prefsService.getSede();
     notifyListeners();
+    await resincronizarGeocerca();
   }
 
   Future<void> setAsuetosActivos(bool valor) async {

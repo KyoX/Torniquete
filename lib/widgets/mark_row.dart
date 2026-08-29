@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/ubicacion_marca.dart';
-import '../utils/geo_utils.dart';
 import 'ubicacion_info.dart';
 
 /// Fila que muestra una marca de tiempo (icono + etiqueta + hora) y permite
@@ -14,12 +13,8 @@ class MarkRow extends StatelessWidget {
   final ValueChanged<TimeOfDay> onEditar;
   final VoidCallback? onLimpiar;
 
-  /// Evidencia de dónde se registró la marca (si el usuario la habilitó).
-  final UbicacionMarca? ubicacion;
-  final bool capturandoUbicacion;
-
-  /// Qué tan lejos de la sede quedó esta marca, si la geocerca está activa.
-  final EvaluacionGeocerca? geocerca;
+  /// Dónde se registró la marca, si el usuario habilitó la ubicación.
+  final EvidenciaMarca evidencia;
 
   const MarkRow({
     super.key,
@@ -29,9 +24,7 @@ class MarkRow extends StatelessWidget {
     required this.valorActual,
     required this.onEditar,
     this.onLimpiar,
-    this.ubicacion,
-    this.capturandoUbicacion = false,
-    this.geocerca,
+    this.evidencia = EvidenciaMarca.ninguna,
   });
 
   Future<void> _editar(BuildContext context) async {
@@ -53,10 +46,10 @@ class MarkRow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           UbicacionIndicador(
-            ubicacion: ubicacion,
-            capturando: capturandoUbicacion,
+            ubicacion: evidencia.ubicacion,
+            capturando: evidencia.capturando,
             etiqueta: label,
-            geocerca: geocerca,
+            geocerca: evidencia.geocerca,
           ),
           TextButton.icon(
             onPressed: () => _editar(context),

@@ -70,6 +70,13 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Geocercas del sistema para el aviso de llegada a la sede. Geolocator ya
+    // arrastra esta librería, pero se declara aparte porque aquí se compila
+    // contra ella: depender de la transitiva la deja rota el día que el
+    // plugin cambie de versión o de proveedor de ubicación.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+    // NotificationCompat para el aviso que construye GeocercaLlegada.
+    implementation("androidx.core:core-ktx:1.13.1")
 }
 
 kotlin {
