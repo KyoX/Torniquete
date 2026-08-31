@@ -3,7 +3,9 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/registro.dart';
+import '../models/tipo_dia.dart';
 import '../providers/app_provider.dart';
+import '../providers/historial_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/db_service.dart';
 import '../services/pausas_service.dart';
@@ -21,16 +23,34 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  late Future<List<Registro>> _historialFuture;
+  final HistorialProvider _historial = HistorialProvider();
 
   @override
   void initState() {
     super.initState();
-    _cargarHistorial();
+    _historial.recargar();
   }
 
-  void _cargarHistorial() {
-    _historialFuture = DbService.instance.getHistorial();
+  @override
+  void dispose() {
+    _historial.dispose();
+    super.dispose();
+  }
+
+  /// Salta la lista al mes que se elija. Se pide un día porque Material no
+  /// trae un selector de mes; del elegido solo se usa el mes.
+  Future<void> _elegirMes() async {
+    final ahora = DateTime.now();
+    final elegido = await showDatePicker(
+      context: context,
+      initialDate: _historial.mes ?? ahora,
+      firstDate: DateTime(ahora.year - 5),
+      lastDate: ahora,
+      initialDatePickerMode: DatePickerMode.year,
+      helpText: 'Salta al mes que quieras revisar',
+    );
+    if (elegido == null) return;
+    await _historial.irAlMes(elegido);
   }
 
   String _formatearFecha(String fecha) {
@@ -79,8 +99,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     if (!mounted) return;
-    setState(_cargarHistorial);
+    await _historial.recargar();
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Día ${_formatearFecha(registro.fecha)} reiniciado')),
     );
@@ -129,7 +150,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
 
     if (!mounted) return;
-    setState(_cargarHistorial);
+    await _historial.recargar();
+
+    if (!mounted) return;
+    _avisarSiNoSeVe(registro);
+  }
+
+  /// Un día guardado fuera del trozo que se está mirando no cambia nada en
+  /// pantalla, y parece que no se guardó. Pasa al agregar un día de otro mes
+  /// o de un tipo que el filtro deja fuera.
+  void _avisarSiNoSeVe(Registro registro) {
+    if (_historial.dias.any((d) => d.fecha == registro.fecha)) return;
+    final dia = DateTime.tryParse(registro.fecha);
+    if (dia == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('El día se guardó, pero no está a la vista.'),
+        action: SnackBarAction(
+          label: 'Ir a ese día',
+          onPressed: () => _historial.mostrarMesDe(dia),
+        ),
+      ),
+    );
   }
 
   /// Línea de resumen del día: cuánto se trabajó y contra qué meta, o por
@@ -160,111 +203,218 @@ class _HistoryScreenState extends State<HistoryScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Agregar día'),
       ),
-      body: FutureBuilder<List<Registro>>(
-        future: _historialFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final registros = snapshot.data ?? [];
-          if (registros.isEmpty) {
-            return const Center(
-              child: Text('Aún no hay registros guardados.'),
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-            itemCount: registros.length,
-            separatorBuilder: (context, index) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final r = registros[index];
-              final asueto = context.read<AppProvider>().asuetoEnClave(r.fecha);
-              final minutos = ReportsService.minutosTrabajados(r);
-              final justificado = r.tipoDia.esJustificado;
-              // Un festivo o unas vacaciones no son un día "sin registrar":
-              // no falta nada por marcar en ellos.
-              final sinRegistro = !justificado && minutos <= 0;
-              final cumplida = justificado ||
-                  (!sinRegistro && minutos >= r.metaEfectivaMinutos);
-              return Card(
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => _editarDia(r),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _formatearFecha(r.fecha),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                            Icon(
-                              justificado
-                                  ? Icons.event_available
-                                  : (cumplida
-                                      ? Icons.check_circle
-                                      : (sinRegistro
-                                          ? Icons.remove_circle_outline
-                                          : Icons.error_outline)),
-                              color: justificado
-                                  ? AppColors.neutroDe(context)
-                                  : (cumplida
-                                      ? AppColors.cumplidoDe(context)
-                                      : (sinRegistro
-                                          ? AppColors.neutroDe(context)
-                                          : AppColors.pendienteDe(context))),
-                            ),
-                            IconButton(
-                              tooltip: 'Editar día',
-                              icon: const Icon(Icons.edit),
-                              onPressed: () => _editarDia(r),
-                            ),
-                            IconButton(
-                              tooltip: 'Reiniciar día',
-                              icon: const Icon(Icons.restart_alt),
-                              onPressed: () => _confirmarReinicio(r),
-                            ),
-                          ],
-                        ),
-                        if (justificado ||
-                            asueto != null ||
-                            (r.nota?.isNotEmpty ?? false)) ...[
-                          const SizedBox(height: 8),
-                          _EtiquetaDia(registro: r, asueto: asueto),
-                        ],
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 16,
-                          runSpacing: 4,
-                          children: [
-                            _Marca('Entrada',
-                                TimeUtils.formatHHmm(r.entrada1)),
-                            _Marca('Pausas',
-                                PausasService.resumen(r.pausas)),
-                            _Marca('Salida real',
-                                TimeUtils.formatHHmm(r.salidaReal)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _resumenHoras(r, minutos, justificado, sinRegistro),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+      body: ListenableBuilder(
+        listenable: _historial,
+        builder: (context, _) => Column(
+          children: [
+            _BarraFiltros(historial: _historial, onElegirMes: _elegirMes),
+            const Divider(height: 1),
+            Expanded(child: _lista()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _lista() {
+    final dias = _historial.dias;
+    if (dias.isEmpty) {
+      if (_historial.cargando) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return _SinResultados(
+        filtrado: _historial.filtrado,
+        onLimpiar: _historial.limpiarFiltros,
+      );
+    }
+
+    // Una fila de más al final mientras quede historial por traer.
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+      itemCount: dias.length + (_historial.hayMas ? 1 : 0),
+      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        if (index < dias.length) return _tarjetaDia(dias[index]);
+        // Si esta fila se está construyendo, el usuario ya va llegando al
+        // final de lo cargado: se pide la página siguiente. ListView la
+        // construye un poco antes de que se vea, así que la espera casi
+        // siempre queda fuera de pantalla.
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _historial.cargarMas());
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(child: CircularProgressIndicator()),
+        );
+      },
+    );
+  }
+
+  Widget _tarjetaDia(Registro r) {
+    final asueto = context.read<AppProvider>().asuetoEnClave(r.fecha);
+    final minutos = ReportsService.minutosTrabajados(r);
+    final justificado = r.tipoDia.esJustificado;
+    // Un festivo o unas vacaciones no son un día "sin registrar": no falta
+    // nada por marcar en ellos.
+    final sinRegistro = !justificado && minutos <= 0;
+    final cumplida =
+        justificado || (!sinRegistro && minutos >= r.metaEfectivaMinutos);
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _editarDia(r),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _formatearFecha(r.fecha),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                ),
-              );
-            },
-          );
-        },
+                  Icon(
+                    justificado
+                        ? Icons.event_available
+                        : (cumplida
+                            ? Icons.check_circle
+                            : (sinRegistro
+                                ? Icons.remove_circle_outline
+                                : Icons.error_outline)),
+                    color: justificado
+                        ? AppColors.neutroDe(context)
+                        : (cumplida
+                            ? AppColors.cumplidoDe(context)
+                            : (sinRegistro
+                                ? AppColors.neutroDe(context)
+                                : AppColors.pendienteDe(context))),
+                  ),
+                  IconButton(
+                    tooltip: 'Editar día',
+                    icon: const Icon(Icons.edit),
+                    onPressed: () => _editarDia(r),
+                  ),
+                  IconButton(
+                    tooltip: 'Reiniciar día',
+                    icon: const Icon(Icons.restart_alt),
+                    onPressed: () => _confirmarReinicio(r),
+                  ),
+                ],
+              ),
+              if (justificado ||
+                  asueto != null ||
+                  (r.nota?.isNotEmpty ?? false)) ...[
+                const SizedBox(height: 8),
+                _EtiquetaDia(registro: r, asueto: asueto),
+              ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 16,
+                runSpacing: 4,
+                children: [
+                  _Marca('Entrada', TimeUtils.formatHHmm(r.entrada1)),
+                  _Marca('Pausas', PausasService.resumen(r.pausas)),
+                  _Marca('Salida real', TimeUtils.formatHHmm(r.salidaReal)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _resumenHoras(r, minutos, justificado, sinRegistro),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// El mes que se está mirando y los tipos de día que se dejan pasar.
+class _BarraFiltros extends StatelessWidget {
+  final HistorialProvider historial;
+  final VoidCallback onElegirMes;
+
+  const _BarraFiltros({required this.historial, required this.onElegirMes});
+
+  @override
+  Widget build(BuildContext context) {
+    final mes = historial.mes;
+    return SizedBox(
+      height: 56,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          InputChip(
+            avatar: const Icon(Icons.event, size: 18),
+            label: Text(mes == null ? 'Cualquier mes' : _nombreDelMes(mes)),
+            onPressed: onElegirMes,
+            // La X solo aparece cuando hay un mes que quitar.
+            onDeleted: mes == null ? null : historial.quitarMes,
+          ),
+          const SizedBox(width: 8),
+          for (final tipo in TipoDia.values) ...[
+            FilterChip(
+              label: Text(tipo.etiqueta),
+              selected: historial.tipos.contains(tipo),
+              onSelected: (marcado) {
+                final tipos = {...historial.tipos};
+                if (marcado) {
+                  tipos.add(tipo);
+                } else {
+                  tipos.remove(tipo);
+                }
+                historial.filtrarPor(tipos);
+              },
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// "Agosto de 2026".
+  static String _nombreDelMes(DateTime mes) {
+    final texto = DateFormat("MMMM 'de' yyyy", 'es').format(mes);
+    return texto[0].toUpperCase() + texto.substring(1);
+  }
+}
+
+/// Ni un día que enseñar: o todavía no hay historial, o el filtro se lo comió
+/// entero, que son dos cosas distintas.
+class _SinResultados extends StatelessWidget {
+  final bool filtrado;
+  final VoidCallback onLimpiar;
+
+  const _SinResultados({required this.filtrado, required this.onLimpiar});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              filtrado
+                  ? 'Ningún día coincide con lo que estás buscando.'
+                  : 'Aún no hay registros guardados.',
+              textAlign: TextAlign.center,
+            ),
+            if (filtrado)
+              TextButton(
+                onPressed: onLimpiar,
+                child: const Text('Quitar los filtros'),
+              ),
+          ],
+        ),
       ),
     );
   }

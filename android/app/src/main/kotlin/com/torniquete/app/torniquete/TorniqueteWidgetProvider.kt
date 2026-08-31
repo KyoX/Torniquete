@@ -3,6 +3,7 @@ package com.torniquete.app.torniquete
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.view.View
 import android.widget.RemoteViews
 import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetProvider
@@ -22,6 +23,17 @@ import java.util.Calendar
  * hora del ultimo calculo, para no aparentar estar mas al dia de lo que esta.
  */
 class TorniqueteWidgetProvider : HomeWidgetProvider() {
+
+    companion object {
+        /**
+         * Código de petición del botón de marcar rápido. Distinto del que
+         * usa la ficha de Ajustes rápidos para la misma acción: comparten
+         * el mismo intent y una misma acción, y un código repetido haría que
+         * la última superficie en pedir su PendingIntent le pisara los
+         * extras a la otra.
+         */
+        private const val CODIGO_BOTON_ACCION = 10
+    }
 
     override fun onUpdate(
         context: Context,
@@ -74,6 +86,24 @@ class TorniqueteWidgetProvider : HomeWidgetProvider() {
                     R.id.widget_raiz,
                     HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java),
                 )
+
+                // El botón de marcar rápido solo aparece si hoy queda algo
+                // por marcar; si no, se oculta y tocar el widget se queda en
+                // abrir la app, que es lo único que cabe hacer.
+                val accionTipo = widgetData.getString("accion_tipo", null)
+                if (accionTipo.isNullOrEmpty()) {
+                    setViewVisibility(R.id.widget_boton_accion, View.GONE)
+                } else {
+                    setViewVisibility(R.id.widget_boton_accion, View.VISIBLE)
+                    setTextViewText(
+                        R.id.widget_boton_accion,
+                        widgetData.getString("accion_etiqueta", null) ?: "Marcar",
+                    )
+                    setOnClickPendingIntent(
+                        R.id.widget_boton_accion,
+                        MainActivity.pendingIntentParaMarcar(context, accionTipo, CODIGO_BOTON_ACCION),
+                    )
+                }
             }
             appWidgetManager.updateAppWidget(widgetId, views)
         }

@@ -32,6 +32,11 @@ object GeocercaStore {
 
     private const val FECHA = "fecha"
     private const val MARCA_SUGERIDA = "marca_sugerida"
+    private const val MARCA_SALIDA = "marca_salida"
+    private const val SALIDA_DESDE = "salida_desde"
+
+    /** Marca de "no hay hora", para distinguirla de la medianoche. */
+    private const val SIN_HORA = -1
 
     private const val AVISO_FECHA = "aviso_fecha"
     private const val AVISO_TIPO = "aviso_tipo"
@@ -39,9 +44,10 @@ object GeocercaStore {
     private const val PENDIENTE_TIPO = "pendiente_tipo"
     private const val PENDIENTE_MS = "pendiente_ms"
 
-    /** Marcas que el aviso sabe registrar. Coinciden con MarcaTipo en Dart. */
+    /** Marcas que los avisos saben registrar. Coinciden con MarcaTipo en Dart. */
     const val MARCA_ENTRADA = "entrada1"
     const val MARCA_REANUDAR = "reanudar"
+    const val MARCA_SALIDA_REAL = "salidaReal"
 
     /**
      * De lunes a viernes, en la misma mascara de bits que se guarda.
@@ -127,10 +133,18 @@ object GeocercaStore {
 
     // --- Estado del dia -----------------------------------------------------
 
-    fun guardarDia(context: Context, fecha: String, marcaSugerida: String?) {
+    fun guardarDia(
+        context: Context,
+        fecha: String,
+        marcaSugerida: String?,
+        marcaSalida: String?,
+        salidaDesdeMinuto: Int?,
+    ) {
         prefs(context).edit()
             .putString(FECHA, fecha)
             .putString(MARCA_SUGERIDA, marcaSugerida ?: "")
+            .putString(MARCA_SALIDA, marcaSalida ?: "")
+            .putInt(SALIDA_DESDE, salidaDesdeMinuto ?: SIN_HORA)
             .apply()
     }
 
@@ -151,6 +165,35 @@ object GeocercaStore {
         val p = prefs(context)
         if (p.getString(FECHA, null) != hoy()) return MARCA_ENTRADA
         return p.getString(MARCA_SUGERIDA, "")?.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * Que marca ofrecer al salir del radio, o null si no hay ninguna.
+     *
+     * Al contrario que en la llegada, aqui no hay valor por defecto: si lo
+     * ultimo escrito por Dart no es de hoy, la app no se ha abierto en todo
+     * el dia y no hay forma de saber si la jornada llego a empezar.
+     * Preguntar por una salida que quiza nunca tuvo entrada seria peor que
+     * callarse.
+     *
+     * El umbral horario tambien lo pone Dart: depende de la meta del dia, de
+     * las pausas y del descuento de almuerzo, que aqui no se conocen. Antes
+     * de esa hora se ignora la salida, porque cualquier diligencia a media
+     * mañana dispara el mismo evento que irse a casa.
+     */
+    fun marcaSalidaAOfrecer(context: Context): String? {
+        if (!esDiaDeOficina(context)) return null
+        val p = prefs(context)
+        if (p.getString(FECHA, null) != hoy()) return null
+        val tipo = p.getString(MARCA_SALIDA, "")?.takeIf { it.isNotEmpty() } ?: return null
+        val desde = p.getInt(SALIDA_DESDE, SIN_HORA)
+        if (desde == SIN_HORA || minutoDelDia() < desde) return null
+        return tipo
+    }
+
+    private fun minutoDelDia(): Int {
+        val ahora = Calendar.getInstance()
+        return ahora.get(Calendar.HOUR_OF_DAY) * 60 + ahora.get(Calendar.MINUTE)
     }
 
     // --- Antirrepeticion ----------------------------------------------------

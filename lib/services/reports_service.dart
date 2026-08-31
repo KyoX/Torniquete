@@ -283,6 +283,38 @@ class ReportsService {
     return pendiente > 0 ? pendiente : 0;
   }
 
+  /// El minuto del día en que toca salir: la entrada, más la meta del día,
+  /// más todo lo que se ha estado de pausa, más el almuerzo que la empresa
+  /// descuenta y todavía no se ha tomado. Cada pausa empuja la salida hacia
+  /// adelante justo lo que duró.
+  ///
+  /// Es la única definición de la hora estimada de salida: la usan el banner
+  /// del dashboard, el recordatorio de salida, la pregunta al salir de la
+  /// sede y la propuesta para cerrar un día que quedó abierto.
+  ///
+  /// [minutosAhora] es hasta dónde se cuenta una pausa todavía abierta, así
+  /// que mientras se está fuera la hora se va corriendo minuto a minuto: es
+  /// una estimación de "si vuelves ya y no paras más".
+  ///
+  /// [metaMinutos] permite pedir la estimación con otra meta que la del día.
+  /// Sirve para los días justificados, que no exigen horas pero sí se pueden
+  /// haber trabajado.
+  ///
+  /// Null si el día no tiene entrada: sin ella no hay nada desde donde
+  /// contar.
+  static int? minutoEstimadoSalida(
+    Registro r, {
+    required int minutosAhora,
+    int? metaMinutos,
+  }) {
+    final entrada = _minutos(r.entrada1);
+    if (entrada == null) return null;
+    return entrada +
+        (metaMinutos ?? r.metaEfectivaMinutos) +
+        PausasService.minutosPausados(r.pausas, hasta: minutosAhora) +
+        descuentoPendiente(r, minutosAhora: minutosAhora);
+  }
+
   /// Nunca menos de cero: un descuento mayor que lo trabajado no puede
   /// convertir el día en horas negativas.
   static int _sinNegativos(int minutos) => minutos < 0 ? 0 : minutos;
@@ -454,10 +486,11 @@ class ReportsService {
     int metaMesMinutos = 0;
     for (var dia = 1; dia <= diasEnMes; dia++) {
       final fecha = DateTime(ahora.year, ahora.month, dia);
-      if (fecha.weekday == DateTime.saturday ||
-          fecha.weekday == DateTime.sunday) {
-        continue;
-      }
+      // Un día sin meta no exige nada. Antes se descartaban el sábado y el
+      // domingo por su nombre; ahora los descarta su meta, así que quien
+      // trabaja los sábados los ve contar y quien libra el miércoles no.
+      final metaDelDia = appProvider.metaMinutosParaDia(fecha.weekday);
+      if (metaDelDia <= 0) continue;
       // Un asueto de ley tampoco exige horas, aunque el día no esté marcado
       // a mano: un mes con dos asuetos tiene una meta más baja y la
       // proyección quedaría exigiendo un déficit que no existe.
@@ -475,7 +508,7 @@ class ReportsService {
       if (esPasado && !fechasConHoras.contains(_fechaKey(fecha))) {
         continue;
       }
-      metaMesMinutos += appProvider.metaMinutosParaDia(fecha.weekday);
+      metaMesMinutos += metaDelDia;
     }
 
     final trabajadoHastaHoy = registrosMes.fold<int>(

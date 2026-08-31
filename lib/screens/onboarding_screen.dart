@@ -40,11 +40,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _guardando = true);
     final appProvider = context.read<AppProvider>();
+    // Se arranca con la semana clásica —lunes a jueves y viernes— y no con
+    // los siete días: quien acaba de instalar la app no tiene por qué llenar
+    // una cifra por día para empezar. En Ajustes se afina día por día.
     await appProvider.guardarConfiguracion(
       nombre: _nombreController.text,
-      metaLJHoras: double.parse(_metaLJController.text.replaceAll(',', '.')),
-      metaViernesHoras:
-          double.parse(_metaViernesController.text.replaceAll(',', '.')),
+      metas: MetasSemana.clasica(
+        lunesAJueves: double.parse(_metaLJController.text.replaceAll(',', '.')),
+        viernes: double.parse(_metaViernesController.text.replaceAll(',', '.')),
+      ),
     );
     if (!mounted) return;
     Navigator.of(context).pushReplacement(

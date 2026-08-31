@@ -209,6 +209,7 @@ class BackupService {
     final ubicaciones = await _db.getTodasLasUbicaciones();
     final movimientos = await _db.getMovimientos();
     final sede = await _prefs.getSede();
+    final metas = await _prefs.getMetas();
 
     return {
       'app': _marcaArchivo,
@@ -216,8 +217,11 @@ class BackupService {
       'generado': DateTime.now().toIso8601String(),
       'config': {
         'nombre': await _prefs.getNombre(),
-        'meta_lj_horas': await _prefs.getMetaLJ(),
-        'meta_viernes_horas': await _prefs.getMetaViernes(),
+        'metas_semana_horas': metas.comoLista,
+        // Las dos metas de antes siguen viajando en el respaldo para que una
+        // versión anterior de la app pueda leer este archivo.
+        'meta_lj_horas': metas.horasDe(DateTime.monday),
+        'meta_viernes_horas': metas.horasDe(DateTime.friday),
         'guardar_ubicacion': await _prefs.getGuardarUbicacion(),
         'descuento_almuerzo_min': await _prefs.getDescuentoAlmuerzo(),
         'sede': {
@@ -322,17 +326,30 @@ class BackupService {
     }
   }
 
+  /// Las metas del respaldo. Un archivo escrito por una versión que solo
+  /// sabía de dos —lunes a jueves y viernes— trae únicamente esas, y de ahí
+  /// sale la semana clásica.
+  static MetasSemana _metas(Map config) {
+    final lista = config['metas_semana_horas'];
+    if (lista is List) {
+      final semana = MetasSemana.desdeLista(
+        lista.map((v) => (v as num?)?.toDouble()).toList(),
+      );
+      if (semana != null) return semana;
+    }
+    return MetasSemana.clasica(
+      lunesAJueves: (config['meta_lj_horas'] as num?)?.toDouble() ??
+          PrefsService.defaultMetaLJ,
+      viernes: (config['meta_viernes_horas'] as num?)?.toDouble() ??
+          PrefsService.defaultMetaViernes,
+    );
+  }
+
   Future<void> _restaurarConfig(Object? config) async {
     if (config is! Map) return;
     final nombre = config['nombre'] as String?;
     if (nombre != null && nombre.trim().isNotEmpty) {
-      await _prefs.guardarConfiguracion(
-        nombre: nombre,
-        metaLJ: (config['meta_lj_horas'] as num?)?.toDouble() ??
-            PrefsService.defaultMetaLJ,
-        metaViernes: (config['meta_viernes_horas'] as num?)?.toDouble() ??
-            PrefsService.defaultMetaViernes,
-      );
+      await _prefs.guardarConfiguracion(nombre: nombre, metas: _metas(config));
     }
     final guardarUbicacion = config['guardar_ubicacion'];
     if (guardarUbicacion is bool) {

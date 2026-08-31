@@ -18,8 +18,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreController;
-  late final TextEditingController _metaLJController;
-  late final TextEditingController _metaViernesController;
   bool _guardando = false;
 
   @override
@@ -27,37 +25,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     final appProvider = context.read<AppProvider>();
     _nombreController = TextEditingController(text: appProvider.nombre ?? '');
-    _metaLJController =
-        TextEditingController(text: appProvider.metaLJHoras.toString());
-    _metaViernesController =
-        TextEditingController(text: appProvider.metaViernesHoras.toString());
   }
 
   @override
   void dispose() {
     _nombreController.dispose();
-    _metaLJController.dispose();
-    _metaViernesController.dispose();
     super.dispose();
-  }
-
-  String? _validarNumero(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Requerido';
-    final parsed = double.tryParse(value.replaceAll(',', '.'));
-    if (parsed == null || parsed <= 0 || parsed > 24) return 'Valor inválido';
-    return null;
   }
 
   Future<void> _guardar() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _guardando = true);
-    await context.read<AppProvider>().guardarConfiguracion(
-          nombre: _nombreController.text,
-          metaLJHoras:
-              double.parse(_metaLJController.text.replaceAll(',', '.')),
-          metaViernesHoras:
-              double.parse(_metaViernesController.text.replaceAll(',', '.')),
-        );
+    await context.read<AppProvider>().setNombre(_nombreController.text);
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -84,33 +63,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     (v == null || v.trim().isEmpty) ? 'Requerido' : null,
                 textCapitalization: TextCapitalization.words,
               ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _metaLJController,
-                decoration: const InputDecoration(
-                  labelText: 'Meta de horas (Lunes a Jueves)',
-                  prefixIcon: Icon(Icons.calendar_view_week),
-                  border: OutlineInputBorder(),
-                  suffixText: 'horas',
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                validator: _validarNumero,
-              ),
-              const SizedBox(height: 20),
-              TextFormField(
-                controller: _metaViernesController,
-                decoration: const InputDecoration(
-                  labelText: 'Meta de horas (Viernes)',
-                  prefixIcon: Icon(Icons.weekend),
-                  border: OutlineInputBorder(),
-                  suffixText: 'horas',
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                validator: _validarNumero,
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              const MetasSemanaCard(),
+              const SizedBox(height: 16),
               const DescuentoAlmuerzoCard(),
               const SizedBox(height: 16),
               const AparienciaCard(),

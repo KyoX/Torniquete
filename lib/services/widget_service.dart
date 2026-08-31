@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 
+import '../models/pausa.dart';
 import '../models/registro.dart';
 import '../utils/time_utils.dart';
 import 'pausas_service.dart';
@@ -70,6 +71,14 @@ class WidgetResumen {
   /// más al día de lo que está.
   final String actualizado;
 
+  /// El `MarcaTipo.name` que ofrecería el botón de marcar rápido del widget
+  /// y de la ficha de Ajustes rápidos, o vacío si hoy no hay ninguna marca
+  /// pendiente.
+  final String accionTipo;
+
+  /// La etiqueta de ese botón ("Marcar entrada", "Pausa", "Continuar").
+  final String accionEtiqueta;
+
   const WidgetResumen({
     required this.estado,
     required this.marcas,
@@ -78,6 +87,8 @@ class WidgetResumen {
     required this.abiertoDesdeMinutos,
     required this.metaMinutos,
     required this.actualizado,
+    this.accionTipo = '',
+    this.accionEtiqueta = '',
   });
 
   bool get hayTramoAbierto => abiertoDesdeMinutos >= 0;
@@ -90,6 +101,8 @@ class WidgetResumen {
         'abierto_desde': abiertoDesdeMinutos,
         'meta_minutos': metaMinutos,
         'actualizado': actualizado,
+        'accion_tipo': accionTipo,
+        'accion_etiqueta': accionEtiqueta,
       };
 }
 
@@ -158,6 +171,8 @@ class WidgetService {
             ReportsService.descuentoPendiente(registro, minutosAhora: minutosAhora)
         : ReportsService.minutosEnVivo(registro, minutosAhora);
 
+    final accion = _accion(registro, pausaAbierta: pausaAbierta);
+
     return WidgetResumen(
       estado: _estado(registro),
       marcas: [
@@ -169,8 +184,30 @@ class WidgetService {
       minutosBase: base,
       abiertoDesdeMinutos: abiertoDesde ?? -1,
       metaMinutos: registro.metaEfectivaMinutos,
+      accionTipo: accion.tipo,
+      accionEtiqueta: accion.etiqueta,
       actualizado: actualizado,
     );
+  }
+
+  /// Qué botón de marcar rápido ofrecer, si alguno. Un día justificado o ya
+  /// cerrado no ofrece nada: no hay ninguna marca que le haga falta.
+  ///
+  /// Es una regla aparte de [RegistroProvider.marcaSugeridaAlLlegar] y
+  /// [RegistroProvider.marcaSugeridaAlSalir]: esas dos son para el aviso de
+  /// la sede y dependen de estar cerca de ella, mientras que el widget y la
+  /// ficha ofrecen lo próximo que falte sin que importe dónde está el
+  /// teléfono.
+  static ({String tipo, String etiqueta}) _accion(
+    Registro registro, {
+    required Pausa? pausaAbierta,
+  }) {
+    if (registro.tipoDia.esJustificado || registro.salidaReal != null) {
+      return (tipo: '', etiqueta: '');
+    }
+    if (registro.entrada1 == null) return (tipo: 'entrada1', etiqueta: 'Marcar entrada');
+    if (pausaAbierta != null) return (tipo: 'reanudar', etiqueta: 'Continuar');
+    return (tipo: 'pausa', etiqueta: 'Pausa');
   }
 
   static String _estado(Registro registro) {

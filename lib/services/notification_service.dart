@@ -39,6 +39,7 @@ class NotificationService {
     RecordatorioTipo.entrada: 2000,
     RecordatorioTipo.salidaAlmuerzo: 2100,
     RecordatorioTipo.regresoAlmuerzo: 2200,
+    RecordatorioTipo.confirmarSalida: 2300,
   };
 
   /// Título y cuerpo de cada aviso. El texto explica *por qué* importa la
@@ -55,6 +56,11 @@ class NotificationService {
     RecordatorioTipo.regresoAlmuerzo: (
       'De vuelta al trabajo',
       'Continúa la jornada: la pausa corre hasta que la cierres.',
+    ),
+    RecordatorioTipo.confirmarSalida: (
+      'Confirma tu salida',
+      'El día sigue abierto y sin salida marcada. Ciérralo antes de que '
+          'las horas de después se pierdan.',
     ),
   };
 

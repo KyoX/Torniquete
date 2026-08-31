@@ -23,8 +23,9 @@ class AppProvider extends ChangeNotifier {
   FondoWidget fondoWidget = FondoWidget.solido;
 
   String? nombre;
-  double metaLJHoras = PrefsService.defaultMetaLJ;
-  double metaViernesHoras = PrefsService.defaultMetaViernes;
+
+  /// Las horas que se esperan de cada día de la semana.
+  MetasSemana metas = MetasSemana.clasica();
 
   /// Si está activo, cada marca guarda también dónde se registró.
   bool guardarUbicacion = false;
@@ -51,8 +52,7 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> cargar() async {
     nombre = await _prefsService.getNombre();
-    metaLJHoras = await _prefsService.getMetaLJ();
-    metaViernesHoras = await _prefsService.getMetaViernes();
+    metas = await _prefsService.getMetas();
     guardarUbicacion = await _prefsService.getGuardarUbicacion();
     descuentoAlmuerzoMinutos = await _prefsService.getDescuentoAlmuerzo();
     recordatorios = await _prefsService.getRecordatorios();
@@ -78,18 +78,33 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> guardarConfiguracion({
     required String nombre,
-    required double metaLJHoras,
-    required double metaViernesHoras,
+    required MetasSemana metas,
   }) async {
-    await _prefsService.guardarConfiguracion(
-      nombre: nombre,
-      metaLJ: metaLJHoras,
-      metaViernes: metaViernesHoras,
-    );
+    await _prefsService.guardarConfiguracion(nombre: nombre, metas: metas);
     this.nombre = nombre.trim();
-    this.metaLJHoras = metaLJHoras;
-    this.metaViernesHoras = metaViernesHoras;
+    this.metas = metas;
     cargado = true;
+    notifyListeners();
+  }
+
+  Future<void> setNombre(String valor) async {
+    await _prefsService.setNombre(valor);
+    nombre = valor.trim();
+    cargado = true;
+    notifyListeners();
+  }
+
+  /// Cambia la meta de un día de la semana.
+  ///
+  /// Solo manda sobre los días que se registren a partir de ahora y sobre el
+  /// de hoy, que el dashboard vuelve a igualar al recargar: cada día guarda
+  /// la meta con la que se trabajó, así que cambiar la del miércoles no
+  /// reescribe los miércoles ya pasados.
+  Future<void> setMetaDelDia(int weekday, double horas) async {
+    final nuevas = metas.conDia(weekday, horas);
+    if (nuevas == metas) return;
+    await _prefsService.guardarMetas(nuevas);
+    metas = nuevas;
     notifyListeners();
   }
 
@@ -221,11 +236,8 @@ class AppProvider extends ChangeNotifier {
   }
 
   /// Meta de minutos para el día de la semana indicado (1 = lunes ... 7 = domingo).
-  int metaMinutosParaDia(int weekday) {
-    final horas = weekday == DateTime.friday ? metaViernesHoras : metaLJHoras;
-    return (horas * 60).round();
-  }
+  int metaMinutosParaDia(int weekday) => metas.minutosDe(weekday);
 
   /// Meta de un día laboral típico, para traducir el banco de horas a días.
-  int get metaDiariaTipicaMinutos => (metaLJHoras * 60).round();
+  int get metaDiariaTipicaMinutos => metas.minutosDiaTipico;
 }

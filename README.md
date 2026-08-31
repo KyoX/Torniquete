@@ -34,8 +34,13 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   diligencia a media mañana y luego el almuerzo son dos pausas, no una elección
   entre las dos. Cuál de ellas fue el almuerzo no se marca, se deduce de la hora
   (ver más abajo), así que al pausar no hay nada que decidir.
-- **Meta de horas configurable**: metas distintas para lunes a jueves y para viernes,
-  definidas en el onboarding inicial.
+- **Meta de horas por día de la semana**: cada día pide lo suyo, así que caben un
+  4x10, media jornada el miércoles o un sábado de cuatro horas. El onboarding
+  arranca con la semana de siempre —lunes a jueves y viernes— y en Ajustes se
+  afina día por día. Un día que se deja **sin meta** no exige horas: no resta del
+  banco y lo que se trabaje en él es tiempo extra, igual que un festivo. El fin de
+  semana empieza así, que es lo que antes no se podía decir: el sábado heredaba la
+  meta del lunes y registrarlo abría un déficit de una jornada entera.
 - **Progreso del día**: calcula minutos trabajados, progreso hacia la meta y hora
   estimada de salida. El contador corre en vivo desde la entrada de la mañana y
   la pantalla se refresca sola cada 30 segundos mientras la app está abierta;
@@ -83,14 +88,28 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   después.
 - **Confirmar salida**: botón para registrar la hora real de salida cuando se
   trabaja más tiempo del estimado.
+- **Días sin salida**: si un día se queda con la entrada marcada y sin salida, sus
+  horas no están en el banco. Sin salida real no hay jornada que medir, así que el
+  día cuenta solo hasta la última marca que se alcanzó a guardar —normalmente la
+  vuelta del almuerzo— y la tarde entera desaparece. Al abrir la app se revisa el
+  historial completo y, si aparece alguno, un aviso en el dashboard dice **cuántas
+  horas faltan** y ofrece cerrarlos: para cada día se propone una hora —la que tocaba
+  salir, o el inicio de la pausa que quedó sin cerrar— y se acepta de un toque o se
+  cambia por otra. La propuesta es solo eso: hasta cuándo trabajó cada quien no lo
+  sabe nadie más que él, así que la app nunca la escribe sola.
 - **Recordatorio de salida**: notificación local 5 minutos antes de la hora estimada
   de salida.
 - **Recordatorios de marca** (opcionales, apagados por defecto): avisos a la hora que
-  elijas para no olvidar marcar la entrada, la pausa del almuerzo y la vuelta. Suenan
-  solo los días de oficina que tengas marcados —de lunes a viernes por defecto— y el
-  aviso del día se omite si esa marca ya está hecha.
-  En vez de una alarma diaria repetida se dejan programadas las próximas diez citas,
-  que se recalculan cada vez que se abre la app o se registra una marca.
+  elijas para no olvidar marcar la entrada, la pausa del almuerzo, la vuelta y —el
+  cuarto, distinto de los otros tres— confirmar la salida si a esa hora el día
+  sigue con entrada y sin cerrar. Suenan solo los días de oficina que tengas
+  marcados —de lunes a viernes por defecto— y el aviso del día se omite si esa
+  marca ya está hecha (o, en el de confirmar la salida, si el día ni siquiera
+  ha empezado). En vez de una alarma diaria repetida se dejan programadas las
+  próximas diez citas, que se recalculan cada vez que se abre la app o se
+  registra una marca. El de confirmar la salida es el que cierra el círculo de
+  los días sin salida confirmada: si el aviso no basta, al día siguiente los
+  recoge el apartado anterior.
 - **Tipos de día**: cada día puede marcarse como *festivo*, *vacaciones*,
   *incapacidad* o *permiso*, desde el chip bajo la fecha en el dashboard o al editar
   un día del historial. Un día así no exige meta de horas: no genera déficit en el
@@ -138,21 +157,31 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
 - **Widget de inicio y ficha de Ajustes rápidos**: el widget muestra el progreso del
   día, la hora estimada de salida, la entrada, las pausas y la salida sin abrir la
   app; la ficha de
-  Ajustes rápidos muestra lo mismo al desplegar la barra de notificaciones. El tiempo
-  trabajado no viaja calculado: la app entrega los minutos ya cerrados y el minuto en
-  que empezó el tramo abierto, y el código nativo suma los minutos corridos, así que
-  la cifra no se congela entre una actualización y otra. Aun así Android no redibuja
-  los widgets más de una vez cada media hora, por lo que el widget indica cuándo se
-  refrescaron los datos por última vez. Desde *Ajustes → Apariencia* se elige cuánto
-  se transparenta: **sólido**, **translúcido** o **transparente**. Ninguna opción
-  llega a ser invisible del todo y los textos llevan sombra siempre, porque un widget
-  no puede saber qué fondo de pantalla tiene debajo: sin ese velo mínimo, el texto
-  blanco desaparecería sobre una imagen clara.
+  Ajustes rápidos muestra lo mismo al desplegar la barra de notificaciones. Los dos
+  llevan además la única marca que le falta al día —*Marcar entrada*, *Pausa* o
+  *Continuar*— y tocarla la registra directo, sin pasar por el dashboard: el widget
+  suma un botón abajo (se oculta cuando no hay nada pendiente) y la ficha registra
+  esa misma marca con el toque de siempre. Ninguna de las dos escribe la marca por
+  su cuenta —ni el widget ni la ficha tienen a Dart vivo para eso—: abren la app un
+  instante y es ella quien la guarda con la hora real del toque, no la de la última
+  vez que Android redibujó el widget, que puede ser de hasta media hora atrás. El
+  tiempo trabajado tampoco viaja calculado: la app entrega los minutos ya cerrados y
+  el minuto en que empezó el tramo abierto, y el código nativo suma los minutos
+  corridos, así que la cifra no se congela entre una actualización y otra. Aun así
+  Android no redibuja los widgets más de una vez cada media hora, por lo que el
+  widget indica cuándo se refrescaron los datos por última vez. Desde
+  *Ajustes → Apariencia* se elige cuánto se transparenta: **sólido**, **translúcido**
+  o **transparente**. Ninguna opción llega a ser invisible del todo y los textos
+  llevan sombra siempre, porque un widget no puede saber qué fondo de pantalla tiene
+  debajo: sin ese velo mínimo, el texto blanco desaparecería sobre una imagen clara.
 - **Historial editable**: cada día del historial se puede editar —corregir la
   entrada, la salida real y las horas de cada pausa, y añadir o borrar pausas— o
   reiniciar por completo (borra todas sus marcas). También se
   puede agregar un registro para un día pasado que no tenga marcas (por ejemplo,
-  tras reiniciarlo por error).
+  tras reiniciarlo por error). La lista crece por páginas conforme se baja, así que
+  el historial entero queda a mano y no solo los últimos días; se puede **filtrar
+  por tipo de día** (enseñar solo las incapacidades, solo los festivos) y **saltar
+  a un mes** concreto en vez de recorrer todos los de en medio.
 - **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
   de la meta del mes y balance histórico acumulado de horas, con exportación a PDF
   y Excel del periodo que se elija.
@@ -174,13 +203,22 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   la marca cambia de color y el detalle indica la distancia exacta. El radio mínimo
   es de 50 m a propósito: dentro de un edificio el GPS se desvía decenas de metros y
   un radio corto produciría falsas alertas.
-- **Aviso al llegar al trabajo** (opcional, apagado por defecto): con la sede ya
-  guardada, *Ajustes → Sede → Avisarme al llegar para marcar* le pide a Android que
-  vigile ese radio. Al quedarse dentro llega una notificación que pregunta si marcar
-  —*la entrada* o *continuar la pausa que quedó abierta*, según lo que falte ese
-  día— con un botón para hacerlo y otro para dejarlo pasar. Aceptar abre la app y
-  registra la marca con **la hora del toque**, no con la de cuando la app terminó de
-  abrirse.
+- **Aviso al llegar y al salir del trabajo** (opcional, apagado por defecto): con la
+  sede ya guardada, *Ajustes → Sede → Preguntarme al llegar y al salir* le pide a
+  Android que vigile ese radio. Al quedarse dentro llega una notificación que
+  pregunta si marcar —*la entrada* o *continuar la pausa que quedó abierta*, según lo
+  que falte ese día— con un botón para hacerlo y otro para dejarlo pasar. Al salir
+  del radio pregunta si **cerrar la jornada**, que es la marca que más se olvida y la
+  única cuyo olvido cuesta horas (ver *Días sin salida*). Aceptar abre la app y
+  registra la marca con **la hora del hecho** —cuando el teléfono llegó o salió del
+  radio—, no con la de cuando la app terminó de abrirse, que puede ser el trayecto
+  entero después.
+
+  La salida no se pregunta a cualquier hora: solo a partir de media hora antes de la
+  hora estimada de salida. Sin ese umbral, cualquier diligencia a media mañana
+  dispara el mismo evento y gastaría la única pregunta del día. Tampoco se pregunta
+  con una pausa abierta: quien sale del radio con la pausa corriendo se fue a comer,
+  no a su casa.
 
   La vigilancia la hace el sistema (`GeofencingClient` de Google Play Services), no
   la app: el aviso llega aunque Torniquete esté cerrado, sin notificación persistente
@@ -201,8 +239,8 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   de teletrabajo no es motivo para preguntar si se marca la entrada, ni que den las
   ocho lo es para recordarte una marca que hoy no vas a hacer. Los días en los que sí
   se va —de lunes a viernes por defecto— se eligen en la tarjeta de Sede y gobiernan
-  todo lo que la app dice por su cuenta: el aviso al llegar **y** los recordatorios
-  de marca. Lo que se registra a mano no se toca; cualquier día se puede marcar una
+  todo lo que la app dice por su cuenta: los avisos al llegar y al salir de la sede
+  **y** los recordatorios de marca. Lo que se registra a mano no se toca; cualquier día se puede marcar una
   jornada entera. En el aviso de llegada el filtro se aplica **en el momento de la
   llegada** y no al registrar la geocerca, porque una geocerca se registra una vez y
   vive hasta el siguiente reinicio, mientras que lo que cambia cada madrugada es si
@@ -262,25 +300,31 @@ La variante oscura mantiene los mismos colores sobre fondo azul noche.
 ```text
 lib/
   models/       # Registro, TipoDia, MovimientoBanco y UbicacionMarca
-  providers/    # AppProvider (config) y RegistroProvider (estado del día)
+  providers/    # AppProvider (config), RegistroProvider (estado del día)
+                # e HistorialProvider (la lista paginada del historial)
   services/     # DB, preferencias, notificaciones, ubicación, reportes,
                 # exportación (PDF/Excel), respaldo y datos del widget
   screens/      # Onboarding, dashboard, historial, editar día, ajustes y reportes
   widgets/      # Componentes reutilizables del dashboard
   utils/        # Cálculos puros de tiempo, distancia geográfica y asuetos
 android/app/src/main/kotlin/  # Widget de inicio, ficha de Ajustes rápidos y
-                              # vigilancia de llegada a la sede
+                              # vigilancia de la sede (llegada y salida)
 ```
 
-La regla de qué marca ofrecer al llegar (`RegistroProvider.marcaSugeridaAlLlegar`)
-vive solo en Dart: el lado nativo no la recalcula, lee el resultado que la app le
-deja escrito cada vez que cambia el día. Así la vigilancia puede preguntar lo
-correcto sin un motor de Dart vivo y sigue existiendo una sola definición de "qué
-falta marcar".
+La regla de qué marca ofrecer al llegar y al salir
+(`RegistroProvider.marcaSugeridaAlLlegar` y `marcaSugeridaAlSalir`) vive solo en
+Dart: el lado nativo no la recalcula, lee el resultado que la app le deja escrito
+cada vez que cambia el día. Así la vigilancia puede preguntar lo correcto sin un
+motor de Dart vivo y sigue existiendo una sola definición de "qué falta marcar".
+Con la salida viaja además la hora a partir de la cual preguntarla, porque depende
+de la meta del día, de las pausas y del descuento de almuerzo, que en Kotlin no se
+conocen.
 
 La lógica que se puede probar sin Android vive en funciones puras
 (`ReportsService`, `TimeUtils`, `GeoUtils`, `FestivosSV`,
-`RegistroProvider.marcaSugeridaAlLlegar`, `ReportsService.descuentoPendiente`,
+`RegistroProvider.marcaSugeridaAlLlegar` / `marcaSugeridaAlSalir` /
+`minutoParaPreguntarSalida`, `JornadasAbiertasService.detectar`,
+`ReportsService.minutoEstimadoSalida`, `ReportsService.descuentoPendiente`,
 `DescuentoAlmuerzoService.revisar`, `SedeConfig.diasOficinaLegible`,
 `TimeUtils.proximasOcurrenciasHabiles` (días de oficina),
 `PausasService` (minutos de pausa, franja del almuerzo) y `Pausa.parsear`,

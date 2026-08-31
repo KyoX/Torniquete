@@ -7,6 +7,7 @@ import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
 import '../services/db_service.dart';
 import '../services/geocerca_service.dart';
+import '../services/jornadas_abiertas_service.dart';
 import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/pausas_service.dart';
@@ -53,6 +54,12 @@ class RegistroProvider extends ChangeNotifier {
   /// Aviso pendiente de mostrar cuando una marca cae fuera de la sede.
   /// La pantalla lo consume con [limpiarAvisoGeocerca].
   String? avisoGeocerca;
+
+  /// Jornadas de días anteriores que quedaron sin salida confirmada.
+  ///
+  /// Se revisa al cargar el día porque es entonces cuando se puede saber:
+  /// mientras el día corre, la salida que falta es normal.
+  List<JornadaAbierta> jornadasAbiertas = const [];
 
   /// Marcas cuya ubicación se está capturando en este momento, por clave.
   final Set<String> _capturandoUbicacion = {};
@@ -110,6 +117,55 @@ class RegistroProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Qué marca ofrecería el aviso al salir de la sede, o null si no hay
+  /// ninguna que ofrecer.
+  ///
+  /// La contraria de [marcaSugeridaAlLlegar], y con la misma regla: se
+  /// calcula aquí y viaja resuelta al lado nativo, que no sabe nada de la
+  /// jornada.
+  ///
+  /// Una pausa abierta no se ofrece como salida. Quien sale del radio con la
+  /// pausa corriendo se fue a comer o a una diligencia, no a su casa; si
+  /// resulta que no vuelve, el día queda abierto y lo recoge
+  /// [JornadasAbiertasService] al día siguiente, que es el momento en que se
+  /// puede saber la diferencia.
+  static MarcaTipo? marcaSugeridaAlSalir(Registro? registro) {
+    if (registro == null) return null;
+    // Sin entrada no hay jornada que cerrar: salir del radio es simplemente
+    // irse de un sitio donde hoy no se ha trabajado.
+    if (registro.entrada1 == null) return null;
+    if (registro.salidaReal != null) return null;
+    if (registro.pausaAbierta != null) return null;
+    return MarcaTipo.salidaReal;
+  }
+
+  /// Cuánto antes de la hora estimada de salida se acepta ya la pregunta.
+  ///
+  /// Media hora antes una salida es perfectamente creíble —se sale antes, se
+  /// va uno a una cita—, y esperar a la hora exacta dejaría sin preguntar
+  /// justo a quien más lo necesita.
+  static const int margenSalidaMinutos = 30;
+
+  /// A partir de qué minuto del día tiene sentido preguntar si terminó la
+  /// jornada, o null si hoy no hay ninguna salida que ofrecer.
+  ///
+  /// Sin este umbral, cualquier salida del radio a media mañana —una
+  /// diligencia, un almuerzo fuera sin marcar la pausa— gastaría en el
+  /// momento equivocado la única pregunta que se hace al día.
+  static int? minutoParaPreguntarSalida(
+    Registro? registro, {
+    required int minutosAhora,
+  }) {
+    if (registro == null || marcaSugeridaAlSalir(registro) == null) return null;
+    final estimado = ReportsService.minutoEstimadoSalida(
+      registro,
+      minutosAhora: minutosAhora,
+    );
+    if (estimado == null) return null;
+    return (estimado - margenSalidaMinutos)
+        .clamp(0, JornadasAbiertasService.finDelDia);
+  }
+
   static MarcaTipo? _marcaPorNombre(String nombre) {
     for (final tipo in MarcaTipo.values) {
       if (tipo.name == nombre) return tipo;
@@ -149,6 +205,38 @@ class RegistroProvider extends ChangeNotifier {
     cargando = false;
     notifyListeners();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
+    await revisarJornadasAbiertas();
+  }
+
+  /// Busca días anteriores que quedaron con la entrada marcada y sin salida.
+  ///
+  /// Se consulta el historial entero y no los últimos días: quien lleva
+  /// meses con la app puede arrastrar un día abierto de hace mucho, y ese es
+  /// justo el que nadie va a encontrar solo.
+  Future<void> revisarJornadasAbiertas() async {
+    jornadasAbiertas = JornadasAbiertasService.detectar(
+      await _db.getTodosLosRegistros(),
+      hoy: fechaHoy(),
+    );
+    notifyListeners();
+  }
+
+  /// Cierra a las [hora] una jornada que quedó abierta y recalcula sus horas.
+  ///
+  /// Es una escritura sobre el pasado, así que solo se llega aquí desde una
+  /// confirmación del usuario: la app propone una hora, pero quién trabajó
+  /// hasta cuándo no lo sabe nadie más que él.
+  Future<void> cerrarJornadaAbierta(String fecha, TimeOfDay hora) async {
+    final registro = await _db.getRegistroPorFecha(fecha);
+    if (registro == null) return;
+    final cerrado =
+        registro.copyWith(salidaReal: TimeUtils.formatTimeOfDay(hora));
+    await _db.guardarRegistro(
+      cerrado.copyWith(
+        minutosCumplidos: ReportsService.minutosTrabajados(cerrado),
+      ),
+    );
+    await revisarJornadasAbiertas();
   }
 
   TimeOfDay? get entrada1 => TimeUtils.parseTimeOfDay(registroHoy?.entrada1);
@@ -183,16 +271,12 @@ class RegistroProvider extends ChangeNotifier {
   /// corrige sola en cuanto se reanuda.
   TimeOfDay? get horaEstimadaSalida {
     final registro = registroHoy;
-    final e1 = entrada1;
-    if (registro == null || e1 == null) return null;
+    if (registro == null) return null;
 
     final ahora = TimeUtils.toMinutes(TimeOfDay.now());
-    return TimeUtils.fromMinutes(
-      TimeUtils.toMinutes(e1) +
-          registro.metaEfectivaMinutos +
-          PausasService.minutosPausados(registro.pausas, hasta: ahora) +
-          ReportsService.descuentoPendiente(registro, minutosAhora: ahora),
-    );
+    final minuto =
+        ReportsService.minutoEstimadoSalida(registro, minutosAhora: ahora);
+    return minuto == null ? null : TimeUtils.fromMinutes(minuto);
   }
 
   DateTime? get horaEstimadaSalidaDateTime {
@@ -479,12 +563,19 @@ class RegistroProvider extends ChangeNotifier {
     }
   }
 
-  /// Le deja al sistema, por si la llegada ocurre con la app cerrada, la
-  /// fecha del día en curso y la marca que tocaría ofrecer.
+  /// Le deja al sistema, por si la llegada o la salida ocurren con la app
+  /// cerrada, la fecha del día en curso y lo que tocaría ofrecer en cada
+  /// caso.
   Future<void> _sincronizarGeocerca() async {
+    final registro = registroHoy;
     await GeocercaService.instance.actualizarDia(
-      fecha: registroHoy?.fecha ?? fechaHoy(),
-      marcaSugerida: marcaSugeridaAlLlegar(registroHoy)?.name,
+      fecha: registro?.fecha ?? fechaHoy(),
+      marcaSugerida: marcaSugeridaAlLlegar(registro)?.name,
+      marcaSalida: marcaSugeridaAlSalir(registro)?.name,
+      salidaDesdeMinuto: minutoParaPreguntarSalida(
+        registro,
+        minutosAhora: TimeUtils.toMinutes(TimeOfDay.now()),
+      ),
     );
   }
 
@@ -513,11 +604,35 @@ class RegistroProvider extends ChangeNotifier {
     }
     // Si mientras tanto se marcó a mano, manda lo que ya está guardado: la
     // marca aceptada solo vale si sigue siendo la que falta.
-    if (marcaSugeridaAlLlegar(registroHoy) != tipo) return null;
+    if (!_sigueHaciendoFalta(tipo)) return null;
 
     final hora = TimeOfDay.fromDateTime(aceptada.cuando);
     await _setMarca(tipo, hora, nombreUsuario: nombreUsuario);
     return (tipo: tipo, hora: TimeUtils.formatTimeOfDay(hora));
+  }
+
+  /// True si [tipo] sigue siendo lo que la jornada espera.
+  ///
+  /// La entrada y la reanudación se validan contra la regla del aviso de
+  /// llegada, y la salida contra la del aviso de salida. La pausa no la
+  /// ofrece ningún aviso de la sede —lo explica [marcaSugeridaAlLlegar]—,
+  /// pero sí la ofrecen el widget y la ficha de Ajustes rápidos, así que
+  /// aquí se valida con la misma condición que usa [_setMarca] para
+  /// descartarla en silencio: sin pausa ya abierta.
+  bool _sigueHaciendoFalta(MarcaTipo tipo) {
+    final registro = registroHoy;
+    if (registro == null) return false;
+    switch (tipo) {
+      case MarcaTipo.salidaReal:
+        return marcaSugeridaAlSalir(registro) == tipo;
+      case MarcaTipo.pausa:
+        return registro.entrada1 != null &&
+            registro.salidaReal == null &&
+            registro.pausaAbierta == null;
+      case MarcaTipo.entrada1:
+      case MarcaTipo.reanudar:
+        return marcaSugeridaAlLlegar(registro) == tipo;
+    }
   }
 
   Future<void> _actualizarWidget() async {
@@ -568,6 +683,10 @@ class RegistroProvider extends ChangeNotifier {
         // Sin pausa abierta no hay nada que reanudar: o ya se volvió o no se
         // llegó a salir.
         return registroHoy?.pausaAbierta == null;
+      case RecordatorioTipo.confirmarSalida:
+        // Sin entrada no hay día que cerrar, y con salida ya está cerrado:
+        // en los dos casos sobra el aviso. Solo suena con el día a medias.
+        return registroHoy?.entrada1 == null || registroHoy?.salidaReal != null;
     }
   }
 }

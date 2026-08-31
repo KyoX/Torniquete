@@ -137,4 +137,22 @@
         android:textSize="11sp"
         android:maxLines="1"
         android:ellipsize="end" />
+
+    <!-- La única marca que falta ahora mismo, para no tener que abrir la app
+         y navegar hasta el botón. Se oculta cuando el día no tiene ninguna
+         pendiente (festivo, vacaciones, ya cerrado). -->
+    <Button
+        android:id="@+id/widget_boton_accion"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/widget_boton_fondo"
+        android:textColor="@color/widget_fondo"
+        android:textAllCaps="false"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:paddingTop="0dp"
+        android:paddingBottom="0dp" />
 </LinearLayout>

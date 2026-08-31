@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
 import '../utils/festivos_sv.dart';
+import '../utils/time_utils.dart';
 import 'widget_service.dart';
 
 /// Marcas del día que la app puede recordar. Cada una tiene su hora sugerida
@@ -9,7 +11,10 @@ import 'widget_service.dart';
 enum RecordatorioTipo {
   entrada('entrada', 'Marcar entrada', 7 * 60 + 50),
   salidaAlmuerzo('salida_almuerzo', 'Pausar para almorzar', 12 * 60),
-  regresoAlmuerzo('regreso_almuerzo', 'Continuar tras el almuerzo', 13 * 60);
+  regresoAlmuerzo('regreso_almuerzo', 'Continuar tras el almuerzo', 13 * 60),
+  // A diferencia de los otros tres, este no recuerda un hábito del día: solo
+  // suena si a esta hora el día sigue con entrada y sin salida.
+  confirmarSalida('confirmar_salida', 'Confirmar la salida', 20 * 60);
 
   const RecordatorioTipo(this.clave, this.etiqueta, this.minutosPorDefecto);
 
@@ -40,6 +45,45 @@ class RecordatorioConfig {
         activo: activo ?? this.activo,
         minutos: minutos ?? this.minutos,
       );
+}
+
+/// Los días de la semana, nombrados por el `weekday` de [DateTime]
+/// (1 = lunes … 7 = domingo).
+///
+/// Están aquí y no dentro de una configuración concreta porque los comparten
+/// dos ajustes que no se conocen entre sí: la semana de oficina y la meta de
+/// horas de cada día.
+class DiasSemana {
+  const DiasSemana._();
+
+  static const List<String> nombres = [
+    'lunes',
+    'martes',
+    'miércoles',
+    'jueves',
+    'viernes',
+    'sábado',
+    'domingo',
+  ];
+
+  /// Etiquetas de dos letras para los botones. Se usan dos y no una porque
+  /// "M" sirve igual para martes que para miércoles.
+  static const List<String> abreviaturas = [
+    'Lu',
+    'Ma',
+    'Mi',
+    'Ju',
+    'Vi',
+    'Sá',
+    'Do',
+  ];
+
+  static String nombre(int dia) => nombres[dia - 1];
+
+  static String abreviatura(int dia) => abreviaturas[dia - 1];
+
+  static String capitalizar(String texto) =>
+      texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 }
 
 /// Ubicación de la sede y radio dentro del cual se considera que la marca
@@ -81,31 +125,6 @@ class SedeConfig {
   /// De lunes a viernes, que es la semana laboral de la mayoría.
   static const Set<int> diasLaboralesTipicos = {1, 2, 3, 4, 5};
 
-  /// Nombres de los días, indexados por el `weekday` de [DateTime].
-  static const List<String> nombresDias = [
-    'lunes',
-    'martes',
-    'miércoles',
-    'jueves',
-    'viernes',
-    'sábado',
-    'domingo',
-  ];
-
-  /// Etiquetas de dos letras para los botones. Se usan dos y no una porque
-  /// "M" sirve igual para martes que para miércoles.
-  static const List<String> abreviaturasDias = [
-    'Lu',
-    'Ma',
-    'Mi',
-    'Ju',
-    'Vi',
-    'Sá',
-    'Do',
-  ];
-
-  static String nombreDia(int dia) => nombresDias[dia - 1];
-
   /// Un radio muy pequeño produce falsas alertas: el GPS de un teléfono
   /// dentro de un edificio se desvía decenas de metros con facilidad.
   static const int minRadioMetros = 50;
@@ -134,19 +153,19 @@ class SedeConfig {
     final dias = diasOficina.where((d) => d >= 1 && d <= 7).toList()..sort();
     if (dias.isEmpty) return 'Ningún día';
     if (dias.length == 7) return 'Todos los días';
-    if (dias.length == 1) return _capitalizar(nombreDia(dias.first));
+    if (dias.length == 1) {
+      return DiasSemana.capitalizar(DiasSemana.nombre(dias.first));
+    }
 
     final seguidos = dias.last - dias.first == dias.length - 1;
     if (seguidos && dias.length > 2) {
-      return 'De ${nombreDia(dias.first)} a ${nombreDia(dias.last)}';
+      return 'De ${DiasSemana.nombre(dias.first)} '
+          'a ${DiasSemana.nombre(dias.last)}';
     }
-    final nombres = dias.map(nombreDia).toList();
+    final nombres = dias.map(DiasSemana.nombre).toList();
     final ultimo = nombres.removeLast();
-    return _capitalizar('${nombres.join(', ')} y $ultimo');
+    return DiasSemana.capitalizar('${nombres.join(', ')} y $ultimo');
   }
-
-  static String _capitalizar(String texto) =>
-      texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 
   SedeConfig copyWith({
     bool? activa,
@@ -168,12 +187,155 @@ class SedeConfig {
       );
 }
 
+/// Cuántas horas se esperan de cada día de la semana.
+///
+/// Antes la app solo sabía de dos metas —lunes a jueves y viernes— y le daba
+/// la del lunes a los sábados, así que un 4x10, media jornada el miércoles o
+/// un sábado suelto no cabían, y registrar un fin de semana inventaba un
+/// déficit de una jornada entera.
+@immutable
+class MetasSemana {
+  /// Horas de cada día, indexadas por el `weekday` de [DateTime]
+  /// (1 = lunes … 7 = domingo).
+  ///
+  /// Un día en cero no exige horas: cuenta como libre, no resta del banco y
+  /// lo que se trabaje en él es tiempo extra, igual que un festivo.
+  final Map<int, double> horas;
+
+  const MetasSemana._(this.horas);
+
+  /// Nadie trabaja más de un día en un día.
+  static const double maxHoras = 24;
+
+  /// La semana que la app daba por supuesta: lunes a jueves iguales, el
+  /// viernes por su cuenta y el fin de semana libre.
+  ///
+  /// Es lo que se le da a quien nunca ha tocado el ajuste y lo que guarda el
+  /// onboarding: pedir siete cifras para empezar a usar la app es demasiado,
+  /// y de aquí se afina después día por día.
+  factory MetasSemana.clasica({
+    double lunesAJueves = PrefsService.defaultMetaLJ,
+    double viernes = PrefsService.defaultMetaViernes,
+  }) =>
+      MetasSemana.desde({
+        DateTime.monday: lunesAJueves,
+        DateTime.tuesday: lunesAJueves,
+        DateTime.wednesday: lunesAJueves,
+        DateTime.thursday: lunesAJueves,
+        DateTime.friday: viernes,
+      });
+
+  /// Las horas de los días que se pasen; el resto de la semana queda libre.
+  ///
+  /// Sanea lo que entra —negativos, jornadas de treinta horas, un día 9— en
+  /// vez de confiar: esto llega de las preferencias y de un respaldo escrito
+  /// por otra versión.
+  factory MetasSemana.desde(Map<int, double> horas) => MetasSemana._({
+        for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+          dia: _sanear(horas[dia]),
+      });
+
+  static double _sanear(double? valor) {
+    if (valor == null || valor.isNaN || valor <= 0) return 0;
+    return valor > maxHoras ? maxHoras : valor;
+  }
+
+  double horasDe(int weekday) => horas[weekday] ?? 0;
+
+  int minutosDe(int weekday) => (horasDe(weekday) * 60).round();
+
+  bool exigeHoras(int weekday) => minutosDe(weekday) > 0;
+
+  /// Los días que piden horas, de lunes a domingo.
+  List<int> get diasConMeta => [
+        for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+          if (exigeHoras(dia)) dia,
+      ];
+
+  int get minutosSemana => [
+        for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+          minutosDe(dia),
+      ].fold(0, (suma, m) => suma + m);
+
+  /// Cuánto dura un día de trabajo típico, que es como se traduce el banco de
+  /// horas a días ("te sobran ≈ 2 días").
+  ///
+  /// Es el promedio de los días que piden horas y no la meta del lunes: con
+  /// 8h 30m de lunes a jueves y 6h 30m el viernes, una semana entera de banco
+  /// son cinco días justos, y dividir entre la del lunes diría cuatro y pico.
+  int get minutosDiaTipico {
+    final dias = diasConMeta;
+    if (dias.isEmpty) return 0;
+    return (minutosSemana / dias.length).round();
+  }
+
+  /// La misma semana con [weekday] cambiado.
+  MetasSemana conDia(int weekday, double horasDelDia) =>
+      MetasSemana.desde({...horas, weekday: horasDelDia});
+
+  /// Las metas dichas como las diría una persona, juntando los días seguidos
+  /// que piden lo mismo: "De lunes a jueves 8h 30m · Viernes 6h 30m".
+  String get legible {
+    final dias = diasConMeta;
+    if (dias.isEmpty) return 'Ningún día pide horas';
+
+    final trozos = <String>[];
+    var i = 0;
+    while (i < dias.length) {
+      var fin = i;
+      while (fin + 1 < dias.length &&
+          dias[fin + 1] == dias[fin] + 1 &&
+          horasDe(dias[fin + 1]) == horasDe(dias[i])) {
+        fin++;
+      }
+      final duracion = TimeUtils.formatDurationMinutes(minutosDe(dias[i]));
+      final cuando = switch (fin - i) {
+        0 => DiasSemana.capitalizar(DiasSemana.nombre(dias[i])),
+        1 => DiasSemana.capitalizar(
+            '${DiasSemana.nombre(dias[i])} y ${DiasSemana.nombre(dias[fin])}',
+          ),
+        _ => 'De ${DiasSemana.nombre(dias[i])} '
+            'a ${DiasSemana.nombre(dias[fin])}',
+      };
+      trozos.add('$cuando $duracion');
+      i = fin + 1;
+    }
+    return trozos.join(' · ');
+  }
+
+  /// Las siete horas en orden, que es como se guardan y como viajan en un
+  /// respaldo.
+  List<double> get comoLista => [
+        for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+          horasDe(dia),
+      ];
+
+  /// Lee lo que devuelve [comoLista]. Una lista que no trae los siete días se
+  /// descarta entera: media semana leída a medias es peor que el valor por
+  /// defecto.
+  static MetasSemana? desdeLista(List<double?>? valores) {
+    if (valores == null || valores.length != DateTime.daysPerWeek) return null;
+    return MetasSemana.desde({
+      for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+        dia: valores[dia - 1] ?? 0,
+    });
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MetasSemana && mapEquals(horas, other.horas);
+
+  @override
+  int get hashCode => Object.hashAll(comoLista);
+}
+
 /// Acceso centralizado a SharedPreferences para los datos de configuración
 /// del usuario (nombre, metas de horas, recordatorios y geocerca).
 class PrefsService {
   static const _keyNombre = 'nombre_usuario';
   static const _keyMetaLJ = 'meta_lj_horas';
   static const _keyMetaViernes = 'meta_viernes_horas';
+  static const _keyMetasSemana = 'metas_semana_horas';
   static const _keyGuardarUbicacion = 'guardar_ubicacion';
   static const _keySedeActiva = 'sede_activa';
   static const _keySedeLat = 'sede_latitud';
@@ -211,14 +373,39 @@ class PrefsService {
     return prefs.getString(_keyNombre);
   }
 
-  Future<double> getMetaLJ() async {
+  /// La meta de cada día de la semana.
+  ///
+  /// Quien viene de una versión que solo sabía de dos metas no tiene la clave
+  /// nueva: se le arma la semana clásica con las dos que sí tiene guardadas,
+  /// así que la app le sigue pidiendo exactamente lo mismo que ayer. La
+  /// conversión no se escribe aquí: se guarda sola la primera vez que toque
+  /// el ajuste, y mientras tanto una versión anterior sigue leyendo lo suyo.
+  Future<MetasSemana> getMetas() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keyMetaLJ) ?? defaultMetaLJ;
+    final guardadas = MetasSemana.desdeLista(
+      prefs.getStringList(_keyMetasSemana)?.map(double.tryParse).toList(),
+    );
+    if (guardadas != null) return guardadas;
+    return MetasSemana.clasica(
+      lunesAJueves: prefs.getDouble(_keyMetaLJ) ?? defaultMetaLJ,
+      viernes: prefs.getDouble(_keyMetaViernes) ?? defaultMetaViernes,
+    );
   }
 
-  Future<double> getMetaViernes() async {
+  /// Guarda la semana entera y, de paso, las dos metas viejas.
+  ///
+  /// Las viejas se siguen escribiendo porque son lo único que entiende una
+  /// versión anterior de la app: si se instala el APK de ayer sobre este, el
+  /// lunes y el viernes siguen en su sitio en vez de volver a los valores de
+  /// fábrica.
+  Future<void> guardarMetas(MetasSemana metas) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_keyMetaViernes) ?? defaultMetaViernes;
+    await prefs.setStringList(
+      _keyMetasSemana,
+      metas.comoLista.map((h) => h.toString()).toList(),
+    );
+    await prefs.setDouble(_keyMetaLJ, metas.horasDe(DateTime.monday));
+    await prefs.setDouble(_keyMetaViernes, metas.horasDe(DateTime.friday));
   }
 
   /// Desactivado por defecto: la ubicación solo se guarda si el usuario
@@ -251,15 +438,17 @@ class PrefsService {
     await prefs.setBool(_keyGuardarUbicacion, valor);
   }
 
-  Future<void> guardarConfiguracion({
-    required String nombre,
-    required double metaLJ,
-    required double metaViernes,
-  }) async {
+  Future<void> setNombre(String nombre) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyNombre, nombre.trim());
-    await prefs.setDouble(_keyMetaLJ, metaLJ);
-    await prefs.setDouble(_keyMetaViernes, metaViernes);
+  }
+
+  Future<void> guardarConfiguracion({
+    required String nombre,
+    required MetasSemana metas,
+  }) async {
+    await setNombre(nombre);
+    await guardarMetas(metas);
   }
 
   /// Todos los recordatorios de marca, apagados por defecto.

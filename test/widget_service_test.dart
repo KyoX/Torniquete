@@ -132,4 +132,38 @@ void main() {
     expect(resumen.hayTramoAbierto, isFalse);
     expect(resumen.minutosBase, 240);
   });
+
+  group('el botón de marcar rápido', () {
+    test('sin registro no hay nada que ofrecer', () {
+      expect(resumir(null).accionTipo, '');
+    });
+
+    test('sin entrada, ofrece marcarla', () {
+      final resumen = resumir(dia());
+      expect(resumen.accionTipo, 'entrada1');
+      expect(resumen.accionEtiqueta, 'Marcar entrada');
+    });
+
+    test('trabajando, ofrece la pausa', () {
+      final resumen = resumir(dia(e1: '08:00'));
+      expect(resumen.accionTipo, 'pausa');
+      expect(resumen.accionEtiqueta, 'Pausa');
+    });
+
+    test('de pausa, ofrece continuar', () {
+      final resumen = resumir(dia(e1: '08:00', s1: '12:00'));
+      expect(resumen.accionTipo, 'reanudar');
+      expect(resumen.accionEtiqueta, 'Continuar');
+    });
+
+    test('con la jornada cerrada no hay nada más que marcar', () {
+      final resumen = resumir(dia(e1: '08:00', s1: '12:00', e2: '13:00', sr: '17:00'));
+      expect(resumen.accionTipo, '');
+    });
+
+    test('un día justificado tampoco ofrece nada', () {
+      final resumen = resumir(dia(e1: '08:00', tipo: TipoDia.festivo));
+      expect(resumen.accionTipo, '');
+    });
+  });
 }

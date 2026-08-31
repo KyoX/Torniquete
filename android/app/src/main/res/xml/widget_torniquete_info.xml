@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- El alto declarado tiene que dar para las cinco filas de
-     widget_torniquete.xml. Con los 110dp de antes el launcher colocaba el
-     widget a dos celdas y la fila de marcas quedaba cortada por abajo: un
-     AppWidget no hace scroll, simplemente recorta lo que sobra.
+<!-- El alto declarado tiene que dar para las seis filas de
+     widget_torniquete.xml, botón de marcar incluido. Con los 110dp de antes
+     el launcher colocaba el widget a dos celdas y la fila de marcas quedaba
+     cortada por abajo: un AppWidget no hace scroll, simplemente recorta lo
+     que sobra.
 
-     minResizeHeight deja encogerlo a mano, y ahi si se pierde la ultima
-     fila; por eso las filas van de mas a menos importante de arriba abajo. -->
+     minResizeHeight deja encogerlo a mano, y ahi se pierde el boton antes
+     que nada: sigue pudiendose marcar tocando el widget entero, que abre la
+     app. Por eso las filas van de mas a menos importante de arriba abajo. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
-    android:minHeight="140dp"
+    android:minHeight="172dp"
     android:minResizeWidth="180dp"
     android:minResizeHeight="110dp"
     android:targetCellWidth="3"

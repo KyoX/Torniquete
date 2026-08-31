@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo del botón de marcar rápido del widget: el mismo acento que la
+     barra de progreso, para que se note que es la acción principal. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_acento" />
+    <corners android:radius="8dp" />
+</shape>

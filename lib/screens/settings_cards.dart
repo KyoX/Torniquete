@@ -17,6 +17,183 @@ import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import 'reports/export_report_sheet.dart';
 
+/// Las horas que se esperan de cada día de la semana.
+///
+/// Antes eran dos cifras —lunes a jueves y viernes— y no cabía nada más: ni
+/// un 4x10, ni media jornada el miércoles, ni un sábado. Cada día se toca por
+/// separado, y el que se deja en cero no pide horas.
+class MetasSemanaCard extends StatelessWidget {
+  const MetasSemanaCard({super.key});
+
+  Future<void> _editar(BuildContext context, int dia) async {
+    final appProvider = context.read<AppProvider>();
+    final horas = await showDialog<double>(
+      context: context,
+      builder: (_) =>
+          _MetaDiaDialog(dia: dia, horas: appProvider.metas.horasDe(dia)),
+    );
+    if (horas == null) return;
+    await appProvider.setMetaDelDia(dia, horas);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tema = Theme.of(context);
+    final metas = context.watch<AppProvider>().metas;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.calendar_view_week),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Meta de horas',
+                    style: tema.textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Toca un día para cambiar lo que se espera de ti ese día.',
+              style: tema.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var dia = DateTime.monday; dia <= DateTime.sunday; dia++)
+                  InputChip(
+                    label: Text(
+                      '${DiasSemana.abreviatura(dia)} · '
+                      '${_metaLegible(metas.minutosDe(dia))}',
+                    ),
+                    selected: metas.exigeHoras(dia),
+                    showCheckmark: false,
+                    onPressed: () => _editar(context, dia),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(metas.legible, style: tema.textTheme.bodySmall),
+            const SizedBox(height: 2),
+            Text(
+              'La semana completa suma '
+              '${TimeUtils.formatDurationMinutes(metas.minutosSemana)}.',
+              style: tema.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Un día sin meta no resta del banco de horas: lo que trabajes en '
+              'él cuenta entero como tiempo extra. Cambiar una meta no toca '
+              'los días ya registrados, que guardan la suya.',
+              style: tema.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _metaLegible(int minutos) =>
+      minutos > 0 ? TimeUtils.formatDurationMinutes(minutos) : 'libre';
+}
+
+/// La meta de un solo día, en horas decimales como en el resto de la app.
+class _MetaDiaDialog extends StatefulWidget {
+  final int dia;
+  final double horas;
+
+  const _MetaDiaDialog({required this.dia, required this.horas});
+
+  @override
+  State<_MetaDiaDialog> createState() => _MetaDiaDialogState();
+}
+
+class _MetaDiaDialogState extends State<_MetaDiaDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.horas > 0 ? _sinCerosDeMas(widget.horas) : '',
+  );
+
+  /// "8.5" y no "8.5000000001", y "8" y no "8.0".
+  static String _sinCerosDeMas(double horas) {
+    final texto = horas.toStringAsFixed(2);
+    return texto.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  double? _leer() => double.tryParse(_controller.text.replaceAll(',', '.'));
+
+  void _guardar() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.of(context).pop(_leer());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final nombre = DiasSemana.nombre(widget.dia);
+    return AlertDialog(
+      title: Text('Meta del $nombre'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Horas',
+                border: OutlineInputBorder(),
+                helperText: 'En horas y fracción: 8.5 son ocho y media.',
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              validator: (valor) {
+                final horas = _leer();
+                if (valor == null || valor.trim().isEmpty) return 'Requerido';
+                if (horas == null || horas <= 0) {
+                  return 'Para un día libre usa "Sin meta"';
+                }
+                if (horas > MetasSemana.maxHoras) return 'Valor inválido';
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        // Poner cero a mano y "no trabajo ese día" son lo mismo, pero solo lo
+        // segundo se le ocurre a quien abre esto.
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(0),
+          child: const Text('Sin meta'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(onPressed: _guardar, child: const Text('Guardar')),
+      ],
+    );
+  }
+}
+
 /// Almuerzo que la empresa descuenta salgas o no a comer.
 ///
 /// Apagado por defecto (cero minutos): sin configurarlo la app cuenta el
@@ -615,14 +792,15 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
   String _estadoLlegada(SedeConfig sede) {
     if (!sede.tieneCoordenadas) return 'Primero guarda dónde queda la sede.';
     if (!sede.avisarAlLlegar) {
-      return 'Al quedarte dentro del radio, una notificación te pregunta si '
-          'marcas la entrada o si continúas una pausa que dejaste abierta.';
+      return 'Al quedarte dentro del radio se te pregunta si marcas la '
+          'entrada o si continúas una pausa abierta; al irte, si cierras la '
+          'jornada.';
     }
     if (sede.diasOficina.isEmpty) {
       return 'No hay ningún día de oficina marcado, así que no se avisará.';
     }
     if (_vigilancia.vigilando) {
-      return 'Android está vigilando la sede: el aviso llega aunque la app '
+      return 'Android está vigilando la sede: los avisos llegan aunque la app '
           'esté cerrada.';
     }
     if (!_vigilancia.permisoDeFondo) {
@@ -742,7 +920,7 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
               onChanged: sede.tieneCoordenadas && !_procesandoLlegada
                   ? _cambiarAvisoLlegada
                   : null,
-              title: const Text('Avisarme al llegar para marcar'),
+              title: const Text('Preguntarme al llegar y al salir'),
               subtitle: Text(_estadoLlegada(sede)),
             ),
             const SizedBox(height: 4),
@@ -757,7 +935,7 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
               children: [
                 for (var dia = 1; dia <= 7; dia++)
                   FilterChip(
-                    label: Text(SedeConfig.abreviaturasDias[dia - 1]),
+                    label: Text(DiasSemana.abreviatura(dia)),
                     selected: sede.diasOficina.contains(dia),
                     onSelected: (elegido) => _cambiarDiaOficina(dia, elegido),
                   ),
@@ -787,16 +965,20 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
               Text(
                 'Se pregunta una sola vez al día por cada marca, y solo tras '
                 'un rato dentro del radio, para que pasar cerca de camino a '
-                'otro sitio no gaste el aviso.',
+                'otro sitio no gaste el aviso. La salida se pregunta al irte, '
+                'y nunca antes de que se acerque tu hora de salida: así una '
+                'diligencia a media mañana no gasta la pregunta del día.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             if (sede.tieneCoordenadas) ...[
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.label_outline),
-                title: Text(sede.nombre?.trim().isNotEmpty == true
-                    ? sede.nombre!.trim()
-                    : 'Sin nombre'),
+                title: Text(
+                  sede.nombre?.trim().isNotEmpty == true
+                      ? sede.nombre!.trim()
+                      : 'Sin nombre',
+                ),
                 subtitle: Text(
                   '${sede.latitud!.toStringAsFixed(5)}, '
                   '${sede.longitud!.toStringAsFixed(5)}',

@@ -11,6 +11,7 @@ import '../providers/registro_provider.dart';
 import '../utils/festivos_sv.dart';
 import '../utils/time_utils.dart';
 import '../widgets/exit_banner.dart';
+import '../widgets/jornadas_abiertas_banner.dart';
 import '../widgets/mark_row.dart';
 import '../widgets/pausa_row.dart';
 import '../widgets/progress_card.dart';
@@ -34,6 +35,13 @@ class _DashboardScreenState extends State<DashboardScreen>
   /// Se guarda la referencia para poder soltar el listener en [dispose],
   /// donde ya no es seguro leer el contexto.
   RegistroProvider? _registroProvider;
+
+  /// True si el usuario apartó el aviso de días sin salida.
+  ///
+  /// Solo dura lo que la pantalla: un día abierto es un agujero en sus horas
+  /// que no se arregla solo, y volver a verlo mañana es lo correcto. Lo que
+  /// no hace falta es insistir mientras está mirando el día de hoy.
+  bool _jornadasDescartadas = false;
 
   /// Asueto que el usuario decidió ignorar porque hoy sí va a trabajar.
   /// Vive solo mientras la pantalla está abierta: no es una decisión que
@@ -151,7 +159,8 @@ class _DashboardScreenState extends State<DashboardScreen>
     await _revisarMarcaDeLlegada();
   }
 
-  /// Registra la marca que el usuario aceptó desde el aviso de llegada.
+  /// Registra la marca que el usuario aceptó desde un aviso de la sede, sea
+  /// el de llegada o el de salida.
   ///
   /// Se revisa al cargar y cada vez que la app vuelve a primer plano porque
   /// el aviso llega con la app cerrada: tocarlo la despierta, y es aquí donde
@@ -163,9 +172,11 @@ class _DashboardScreenState extends State<DashboardScreen>
         .read<RegistroProvider>()
         .registrarMarcaAceptada(nombreUsuario: nombre);
     if (!mounted || marca == null) return;
-    final aviso = marca.tipo == MarcaTipo.entrada1
-        ? 'Entrada registrada a las ${marca.hora}.'
-        : 'Jornada reanudada a las ${marca.hora}.';
+    final aviso = switch (marca.tipo) {
+      MarcaTipo.entrada1 => 'Entrada registrada a las ${marca.hora}.',
+      MarcaTipo.salidaReal => 'Salida registrada a las ${marca.hora}.',
+      _ => 'Jornada reanudada a las ${marca.hora}.',
+    };
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(aviso)));
   }
 
@@ -236,6 +247,16 @@ class _DashboardScreenState extends State<DashboardScreen>
                       nombreUsuario: nombre,
                     ),
                   ),
+                  if (!_jornadasDescartadas &&
+                      registroProvider.jornadasAbiertas.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    JornadasAbiertasBanner(
+                      jornadas: registroProvider.jornadasAbiertas,
+                      onRevisar: () => mostrarJornadasAbiertas(context),
+                      onDescartar: () =>
+                          setState(() => _jornadasDescartadas = true),
+                    ),
+                  ],
                   if (_asuetoDeHoy(appProvider, registroProvider)
                       case final asueto?) ...[
                     const SizedBox(height: 12),

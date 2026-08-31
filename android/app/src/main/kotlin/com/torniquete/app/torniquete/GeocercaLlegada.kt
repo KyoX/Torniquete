@@ -10,6 +10,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -19,7 +22,7 @@ import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 
 /**
- * Vigilancia de llegada a la sede.
+ * Vigilancia de la sede: la llegada y la salida.
  *
  * Se apoya en las geocercas del propio sistema (GeofencingClient) en lugar de
  * mantener vivo un stream de posiciones: Android ya vigila la zona por su
@@ -39,7 +42,17 @@ object GeocercaLlegada {
     private const val CANAL_DESCRIPCION =
         "Pregunta si quieres marcar cuando llegas a la sede"
 
+    /**
+     * La salida tiene su propio canal para que se pueda silenciar sin perder
+     * la llegada: son dos preguntas distintas y hay quien solo quiere una.
+     */
+    const val CANAL_SALIDA_ID = "torniquete_salida_sede"
+    private const val CANAL_SALIDA_NOMBRE = "Salida de la sede"
+    private const val CANAL_SALIDA_DESCRIPCION =
+        "Pregunta si quieres cerrar la jornada cuando te vas de la sede"
+
     const val NOTIFICACION_ID = 3001
+    const val NOTIFICACION_SALIDA_ID = 3002
 
     /**
      * Cuanto hay que quedarse dentro del radio antes de que salte el aviso.
@@ -119,15 +132,22 @@ object GeocercaLlegada {
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             // La entrada se registra tambien porque hay fabricantes que no
             // entregan la permanencia si no se pidio; el receptor filtra igual.
+            // La salida es la que cierra la jornada: es el unico momento en
+            // que el sistema puede saber que el usuario se fue del trabajo.
             .setTransitionTypes(
-                Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_DWELL,
+                Geofence.GEOFENCE_TRANSITION_ENTER or
+                    Geofence.GEOFENCE_TRANSITION_DWELL or
+                    Geofence.GEOFENCE_TRANSITION_EXIT,
             )
             .setLoiteringDelay(PERMANENCIA_MS)
             .build()
 
         val peticion = GeofencingRequest.Builder()
             // Si al configurar la sede el usuario ya esta dentro, se le avisa
-            // sin tener que salir y volver a entrar.
+            // sin tener que salir y volver a entrar. La salida se deja fuera
+            // del disparo inicial a proposito: registrar la geocerca estando
+            // lejos de la oficina —que es lo normal— dispararia una salida
+            // en cada arranque de la app.
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_DWELL)
             .addGeofence(geocerca)
             .build()
@@ -184,6 +204,9 @@ object GeocercaLlegada {
             "Estás en $donde. Dejaste una pausa abierta, ¿la cierro?"
         }
         val accion = if (esEntrada) "Marcar entrada" else "Continuar"
+        // La llegada se da por ocurrida cuando salta el aviso, que es cuando
+        // se cumplio la permanencia dentro del radio.
+        val cuando = System.currentTimeMillis()
 
         val notificacion = NotificationCompat.Builder(context, CANAL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -193,9 +216,9 @@ object GeocercaLlegada {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
-            .setContentIntent(abrirApp(context, null))
-            .addAction(0, accion, abrirApp(context, tipo))
-            .addAction(0, "Ahora no", descartar(context))
+            .setContentIntent(abrirApp(context, null, cuando))
+            .addAction(0, accion, abrirApp(context, tipo, cuando))
+            .addAction(0, "Ahora no", descartar(context, GeocercaReceiver.ACCION_DESCARTAR))
             .build()
 
         try {
@@ -206,24 +229,83 @@ object GeocercaLlegada {
         }
     }
 
-    /** Retira el aviso, por ejemplo cuando la marca ya quedo registrada. */
-    fun cancelarAviso(context: Context) {
-        NotificationManagerCompat.from(context).cancel(NOTIFICACION_ID)
+    /**
+     * Pregunta si cerrar la jornada al salir del radio de la sede.
+     *
+     * Solo se pregunta a partir de la hora que Dart dejo escrita —cerca ya de
+     * la salida estimada—, porque el mismo evento lo dispara cualquier
+     * diligencia a media mañana y la pregunta es una sola al dia.
+     */
+    @SuppressLint("MissingPermission")
+    fun avisarSalida(context: Context) {
+        val tipo = GeocercaStore.marcaSalidaAOfrecer(context) ?: return
+        if (GeocercaStore.yaAvisado(context, tipo)) return
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        crearCanalSalida(context)
+
+        val donde = GeocercaStore.nombreSede(context)?.takeIf { it.isNotBlank() } ?: "la sede"
+        // El momento del evento, no el del toque: la hora que vale es aquella
+        // en la que el telefono salio del radio, y el aviso puede quedarse un
+        // buen rato en la barra antes de que alguien lo mire.
+        val cuando = System.currentTimeMillis()
+        val hora = SimpleDateFormat("HH:mm", Locale.US).format(Date(cuando))
+        val cuerpo = "Saliste de $donde a las $hora. ¿Marco esa hora como tu salida?"
+
+        val notificacion = NotificationCompat.Builder(context, CANAL_SALIDA_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("¿Terminaste tu jornada?")
+            .setContentText(cuerpo)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(cuerpo))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(abrirApp(context, null, cuando))
+            .addAction(0, "Marcar salida", abrirApp(context, tipo, cuando))
+            .addAction(0, "Todavia no", descartar(context, GeocercaReceiver.ACCION_DESCARTAR_SALIDA))
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIFICACION_SALIDA_ID, notificacion)
+            GeocercaStore.anotarAviso(context, tipo)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Sin permiso para notificar la salida", e)
+        }
     }
 
-    private fun crearCanal(context: Context) {
+    /** Retira los avisos, por ejemplo cuando la marca ya quedo registrada. */
+    fun cancelarAviso(context: Context) {
+        NotificationManagerCompat.from(context).apply {
+            cancel(NOTIFICACION_ID)
+            cancel(NOTIFICACION_SALIDA_ID)
+        }
+    }
+
+    private fun crearCanal(context: Context) =
+        crearCanal(context, CANAL_ID, CANAL_NOMBRE, CANAL_DESCRIPCION)
+
+    private fun crearCanalSalida(context: Context) =
+        crearCanal(context, CANAL_SALIDA_ID, CANAL_SALIDA_NOMBRE, CANAL_SALIDA_DESCRIPCION)
+
+    private fun crearCanal(context: Context, id: String, nombre: String, descripcion: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val canal = NotificationChannel(
-            CANAL_ID,
-            CANAL_NOMBRE,
+            id,
+            nombre,
             NotificationManager.IMPORTANCE_HIGH,
-        ).apply { description = CANAL_DESCRIPCION }
+        ).apply { description = descripcion }
         context.getSystemService(NotificationManager::class.java)
             ?.createNotificationChannel(canal)
     }
 
     /**
-     * Abre la app y, si [tipo] no es null, le deja anotada la marca aceptada.
+     * Abre la app y, si [tipo] no es null, le deja anotada la marca aceptada
+     * con [cuandoMs] como hora del hecho.
+     *
+     * La hora viaja dentro del intent y no se lee al abrir la app: entre que
+     * el aviso salta y alguien lo toca pueden pasar minutos —o el trayecto
+     * entero de vuelta a casa—, y lo que hay que registrar es cuando se llego
+     * o se salio, no cuando se miro el telefono.
      *
      * La marca no se escribe desde aqui porque la base de datos y las reglas
      * de la jornada viven en Dart: duplicarlas en Kotlin seria tener dos
@@ -231,28 +313,36 @@ object GeocercaLlegada {
      * del usuario, abrir la actividad esta permitido aunque la app llevara
      * dias cerrada.
      */
-    private fun abrirApp(context: Context, tipo: String?): PendingIntent {
+    private fun abrirApp(context: Context, tipo: String?, cuandoMs: Long): PendingIntent {
         val intent = Intent(context.applicationContext, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         if (tipo != null) {
-            intent.action = MainActivity.ACCION_MARCAR_LLEGADA
+            intent.action = MainActivity.ACCION_MARCAR
             intent.putExtra(MainActivity.EXTRA_MARCA, tipo)
-            intent.putExtra(MainActivity.EXTRA_MS, System.currentTimeMillis())
+            intent.putExtra(MainActivity.EXTRA_MS, cuandoMs)
+        }
+        // Cada marca necesita su propio codigo de peticion: con uno
+        // compartido, el PendingIntent de la salida sobrescribiria los extras
+        // del de la llegada que siguiera vivo en la barra.
+        val codigo = when (tipo) {
+            null -> 0
+            GeocercaStore.MARCA_SALIDA_REAL -> 3
+            else -> 1
         }
         return PendingIntent.getActivity(
             context.applicationContext,
-            if (tipo == null) 0 else 1,
+            codigo,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
-    private fun descartar(context: Context): PendingIntent {
+    private fun descartar(context: Context, accion: String): PendingIntent {
         val intent = Intent(context.applicationContext, GeocercaReceiver::class.java)
-            .setAction(GeocercaReceiver.ACCION_DESCARTAR)
+            .setAction(accion)
         return PendingIntent.getBroadcast(
             context.applicationContext,
-            2,
+            if (accion == GeocercaReceiver.ACCION_DESCARTAR_SALIDA) 4 else 2,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

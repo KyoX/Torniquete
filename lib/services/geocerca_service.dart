@@ -22,21 +22,23 @@ class EstadoGeocerca {
   static const apagada = EstadoGeocerca(vigilando: false, permisoDeFondo: false);
 }
 
-/// Una marca que el usuario aceptó desde el aviso de llegada, todavía sin
+/// Una marca que el usuario aceptó desde un aviso de la sede, todavía sin
 /// registrar en la jornada.
 @immutable
 class MarcaAceptada {
-  /// El nombre del `MarcaTipo` correspondiente ('entrada1' o 'reanudar').
+  /// El nombre del `MarcaTipo` correspondiente ('entrada1', 'reanudar' o
+  /// 'salidaReal').
   final String tipo;
 
-  /// Cuándo se tocó el aviso, que es la hora que debe quedar registrada y no
-  /// la del momento en que la app terminó de arrancar.
+  /// Cuándo ocurrió lo que el aviso preguntaba —la llegada a la sede o la
+  /// salida de ella—, que es la hora que debe quedar registrada y no la del
+  /// momento en que la app terminó de arrancar.
   final DateTime cuando;
 
   const MarcaAceptada({required this.tipo, required this.cuando});
 }
 
-/// Puente con la vigilancia nativa de llegada a la sede.
+/// Puente con la vigilancia nativa de la sede: la llegada y la salida.
 ///
 /// El trabajo de verdad lo hace Android: se le pide vigilar un círculo con
 /// `GeofencingClient` y es él quien despierta a la app cuando el teléfono se
@@ -86,19 +88,29 @@ class GeocercaService {
     return registrada ?? false;
   }
 
-  /// Deja escrito qué marca ofrecería el aviso si la llegada ocurriera ahora.
+  /// Deja escrito qué marca ofrecería cada aviso si la llegada —o la
+  /// salida— ocurriera ahora.
   ///
   /// La regla de qué falta marcar se calcula en Dart y viaja ya resuelta: el
   /// lado nativo tiene que poder preguntar lo correcto sin un motor de Dart
   /// vivo, y duplicar allí las reglas de la jornada sería tener dos versiones
   /// de la misma verdad.
+  ///
+  /// [salidaDesdeMinuto] es el minuto del día a partir del cual la pregunta
+  /// de salida tiene sentido. Sin él, salir del radio a media mañana gastaría
+  /// la pregunta del día; el lado nativo no puede calcularlo porque depende
+  /// de la meta, de las pausas y del descuento de almuerzo.
   Future<void> actualizarDia({
     required String fecha,
     required String? marcaSugerida,
+    String? marcaSalida,
+    int? salidaDesdeMinuto,
   }) =>
       _invocar<void>('actualizarDia', {
         'fecha': fecha,
         'marcaSugerida': marcaSugerida,
+        'marcaSalida': marcaSalida,
+        'salidaDesde': salidaDesdeMinuto,
       });
 
   Future<EstadoGeocerca> estado() async {
@@ -126,7 +138,7 @@ class GeocercaService {
     );
   }
 
-  /// Retira el aviso de llegada que pueda seguir en la barra, por ejemplo
+  /// Retira los avisos de la sede que puedan seguir en la barra, por ejemplo
   /// porque la marca acabó de registrarse desde la propia app.
   Future<void> cancelarAviso() => _invocar<void>('cancelarAviso');
 }

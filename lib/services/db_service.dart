@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/movimiento_banco.dart';
 import '../models/registro.dart';
+import '../models/tipo_dia.dart';
 import '../models/ubicacion_marca.dart';
 
 /// Maneja la base de datos SQLite local que almacena el historial
@@ -174,10 +175,73 @@ class DbService {
     }
   }
 
-  Future<List<Registro>> getHistorial({int limit = 60}) async {
-    final db = await database;
+  /// Una página del historial, del día más reciente al más antiguo.
+  ///
+  /// [antesDe] es el corte superior, exclusivo: la fecha del último día ya
+  /// cargado para pedir la página siguiente, o el primer día del mes que
+  /// sigue al que se quiere revisar para saltar directo allí.
+  ///
+  /// [tipos] vacío no filtra nada.
+  Future<List<Registro>> getHistorial({
+    int limit = 60,
+    String? antesDe,
+    Set<TipoDia> tipos = const {},
+  }) async =>
+      consultarHistorial(
+        await database,
+        limit: limit,
+        antesDe: antesDe,
+        tipos: tipos,
+      );
+
+  /// La consulta que hay detrás de [getHistorial].
+  ///
+  /// Se pagina por fecha y no por un desplazamiento numérico porque la lista
+  /// se puede quedar abierta mientras se agrega o se reinicia un día: con
+  /// `offset` la página siguiente repetiría o se saltaría uno.
+  ///
+  /// Está aparte —y recibe la base— para que las pruebas puedan lanzarla
+  /// contra una base en memoria, igual que [crearEsquema].
+  static Future<List<Registro>> consultarHistorial(
+    DatabaseExecutor db, {
+    int limit = 60,
+    String? antesDe,
+    Set<TipoDia> tipos = const {},
+  }) async {
+    final condiciones = <String>[];
+    final args = <Object?>[];
+
+    if (antesDe != null) {
+      condiciones.add('fecha < ?');
+      args.add(antesDe);
+    }
+
+    if (tipos.isNotEmpty) {
+      final huecos = List.filled(tipos.length, '?').join(', ');
+      final claves = tipos.map((t) => t.clave).toList();
+      if (tipos.contains(TipoDia.normal)) {
+        // Un tipo que esta versión no conoce se lee como día normal (ver
+        // TipoDia.desdeClave), así que al pedir los normales tiene que salir
+        // también: si no, sería un día que existe en la lista sin filtro y
+        // desaparece al filtrar.
+        final todas = List.filled(TipoDia.values.length, '?').join(', ');
+        condiciones.add(
+          '(tipo_dia IN ($huecos) OR tipo_dia IS NULL '
+          'OR tipo_dia NOT IN ($todas))',
+        );
+        args
+          ..addAll(claves)
+          ..addAll(TipoDia.values.map((t) => t.clave));
+      } else {
+        condiciones.add('tipo_dia IN ($huecos)');
+        args.addAll(claves);
+      }
+    }
+
     final rows = await db.query(
       'registros',
+      where: condiciones.isEmpty ? null : condiciones.join(' AND '),
+      whereArgs: args.isEmpty ? null : args,
       orderBy: 'fecha DESC',
       limit: limit,
     );

@@ -11,12 +11,21 @@ import java.util.Calendar
 /**
  * Ficha de Ajustes rapidos: al desplegar la barra de notificaciones muestra
  * cuanto se lleva trabajado hoy y la hora estimada de salida, y al tocarla
- * abre la app.
+ * marca de una vez la unica accion que hoy hace falta —entrada, pausa o
+ * continuar—, o simplemente abre la app si no hay ninguna pendiente.
  *
  * Lee los mismos datos que el widget de inicio (los que escribe WidgetService
  * desde Dart), asi que las dos superficies nunca se contradicen.
  */
 class TorniqueteTileService : TileService() {
+
+    companion object {
+        /** Ver [TorniqueteWidgetProvider.CODIGO_BOTON_ACCION]: misma razon. */
+        private const val CODIGO_MARCAR = 11
+    }
+
+    /** Lo que tocar la ficha dejaria marcado, o null si hoy no hace falta. */
+    private var accionTipo: String? = null
 
     override fun onStartListening() {
         super.onStartListening()
@@ -27,19 +36,26 @@ class TorniqueteTileService : TileService() {
         val abiertoDesde = datos.getInt("abierto_desde", -1)
         val trabajado = base + minutosCorridos(abiertoDesde)
         val estado = datos.getString("estado", null)
+        val accionEtiqueta = datos.getString("accion_etiqueta", null)
+        accionTipo = datos.getString("accion_tipo", null)?.takeIf { it.isNotEmpty() }
 
         // El subtitulo solo existe desde Android 10; antes hay que meterlo
         // todo en la etiqueta o no se veria.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             tile.label = formatearDuracion(trabajado)
-            tile.subtitle = datos.getString("salida", null) ?: estado ?: "Torniquete"
+            tile.subtitle = accionEtiqueta
+                ?: datos.getString("salida", null)
+                ?: estado
+                ?: "Torniquete"
         } else {
-            tile.label = "${formatearDuracion(trabajado)} · ${estado ?: "Torniquete"}"
+            val sufijo = accionEtiqueta ?: estado ?: "Torniquete"
+            tile.label = "${formatearDuracion(trabajado)} · $sufijo"
         }
 
         tile.contentDescription = listOfNotNull(
             estado,
             datos.getString("salida", null),
+            accionEtiqueta?.let { "Toca para $it" },
         ).joinToString(". ")
 
         // Activa mientras haya una jornada corriendo, para que se note de un
@@ -51,20 +67,25 @@ class TorniqueteTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val pendingIntent = HomeWidgetLaunchIntent.getActivity(
-            this,
-            MainActivity::class.java,
-        )
+        val tipo = accionTipo
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val pendingIntent = if (tipo != null) {
+                MainActivity.pendingIntentParaMarcar(this, tipo, CODIGO_MARCAR)
+            } else {
+                HomeWidgetLaunchIntent.getActivity(this, MainActivity::class.java)
+            }
             startActivityAndCollapse(pendingIntent)
         } else {
             // En Android 13 y anteriores solo existe la variante con Intent,
             // ya marcada como obsoleta en las versiones nuevas.
-            @Suppress("DEPRECATION")
-            startActivityAndCollapse(
+            val intent = if (tipo != null) {
+                MainActivity.intentParaMarcar(this, tipo)
+            } else {
                 android.content.Intent(this, MainActivity::class.java)
-                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(intent)
         }
     }
 
