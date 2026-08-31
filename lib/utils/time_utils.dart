@@ -39,13 +39,20 @@ class TimeUtils {
     return '$hour:$minute $period';
   }
 
-  /// Las próximas [cantidad] veces que darán las [minutosDelDia] en un día
-  /// laboral (lunes a viernes), empezando por [desde].
+  /// Los días laborales de siempre, para quien no ha tocado la lista.
+  static const Set<int> diasLaborales = {1, 2, 3, 4, 5};
+
+  /// Las próximas [cantidad] veces que darán las [minutosDelDia] en uno de
+  /// los [dias] de la semana (1 = lunes … 7 = domingo), empezando por [desde].
   ///
   /// Se usa para los recordatorios de marca: en vez de una notificación
   /// diaria repetida —que también sonaría sábado y domingo y no se puede
   /// saltar un día suelto— se programan varias citas concretas y se vuelven
   /// a calcular cada vez que la app se abre o se registra una marca.
+  ///
+  /// [dias] son los días que el usuario tiene marcados como de trabajo. Con
+  /// la semana vacía no hay ninguna cita: nadie quiere que le recuerden
+  /// marcar un día que no trabaja.
   ///
   /// Con [omitirHoy] se descarta la ocurrencia de hoy aunque todavía no haya
   /// llegado la hora (por ejemplo, porque esa marca ya está hecha).
@@ -54,18 +61,19 @@ class TimeUtils {
     int minutosDelDia,
     int cantidad, {
     bool omitirHoy = false,
+    Set<int> dias = diasLaborales,
   }) {
-    if (cantidad <= 0) return const [];
+    if (cantidad <= 0 || dias.isEmpty) return const [];
     final resultado = <DateTime>[];
-    // Tope de seguridad: 8 semanas bastan de sobra para cualquier cantidad
-    // razonable y evitan un bucle infinito si algo viene mal.
-    for (var i = 0; i < 56 && resultado.length < cantidad; i++) {
+    // Tope de seguridad: con un solo día de trabajo a la semana cada cita
+    // cuesta siete jornadas, así que el margen se calcula sobre lo pedido en
+    // vez de fijarlo. Evita el bucle infinito si algo viene mal.
+    final tope = cantidad * 7 + 7;
+    for (var i = 0; i < tope && resultado.length < cantidad; i++) {
       // Se construye cada fecha desde el día 1 en vez de ir sumando duraciones:
       // así el resultado es siempre la hora del reloj que se pidió.
       final dia = DateTime(desde.year, desde.month, desde.day + i);
-      final esFinDeSemana =
-          dia.weekday == DateTime.saturday || dia.weekday == DateTime.sunday;
-      if (esFinDeSemana) continue;
+      if (!dias.contains(dia.weekday)) continue;
 
       final momento = DateTime(
         dia.year,

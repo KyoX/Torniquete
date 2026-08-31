@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../services/geocerca_service.dart';
 import '../services/notification_service.dart';
@@ -123,9 +123,28 @@ class AppProvider extends ChangeNotifier {
       await servicio.programarRecordatorioMarca(
         tipo: config.tipo,
         minutosDelDia: config.minutos,
+        dias: sede.diasOficina,
       );
     } else {
       await servicio.cancelarRecordatorioMarca(config.tipo);
+    }
+  }
+
+  /// Reprograma todos los recordatorios encendidos con los días de trabajo
+  /// que hay guardados ahora.
+  ///
+  /// Hace falta al cambiar la semana de oficina: las citas ya agendadas son
+  /// fechas concretas, así que quitar el lunes no borra por sí solo el aviso
+  /// del lunes que viene.
+  Future<void> _reprogramarRecordatorios() async {
+    final servicio = NotificationService.instance;
+    for (final config in recordatorios.values) {
+      if (!config.activo) continue;
+      await servicio.programarRecordatorioMarca(
+        tipo: config.tipo,
+        minutosDelDia: config.minutos,
+        dias: sede.diasOficina,
+      );
     }
   }
 
@@ -134,9 +153,13 @@ class AppProvider extends ChangeNotifier {
   /// apagado, sin coordenadas o sin el permiso de fondo devuelve false, que
   /// es lo que la pantalla necesita para no prometer lo que no hay.
   Future<bool> guardarSede(SedeConfig nueva) async {
+    final diasAntes = sede.diasOficina;
     await _prefsService.guardarSede(nueva);
     sede = await _prefsService.getSede();
     notifyListeners();
+    if (!setEquals(diasAntes, sede.diasOficina)) {
+      await _reprogramarRecordatorios();
+    }
     return resincronizarGeocerca();
   }
 
@@ -144,6 +167,7 @@ class AppProvider extends ChangeNotifier {
     await _prefsService.borrarSede();
     sede = await _prefsService.getSede();
     notifyListeners();
+    await _reprogramarRecordatorios();
     await resincronizarGeocerca();
   }
 

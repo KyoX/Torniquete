@@ -251,17 +251,21 @@ class NotificationService {
 
   /// Reprograma un recordatorio de marca.
   ///
-  /// Android no sabe repetir "todos los días laborales saltándose el de hoy
+  /// Android no sabe repetir "todos los días de trabajo saltándose el de hoy
   /// si la marca ya está hecha", así que en vez de una alarma repetida se
   /// dejan varias citas concretas. Cada vez que se abre la app o se registra
   /// una marca se vuelven a calcular, y con [omitirHoy] se salta el aviso de
   /// hoy cuando esa marca ya no hace falta.
+  ///
+  /// [dias] son los días de la semana en que se trabaja; los demás no
+  /// reciben ninguna cita.
   ///
   /// Devuelve cuántas citas quedaron programadas.
   Future<int> programarRecordatorioMarca({
     required RecordatorioTipo tipo,
     required int minutosDelDia,
     bool omitirHoy = false,
+    Set<int> dias = TimeUtils.diasLaborales,
     DateTime? ahora,
   }) async {
     await init();
@@ -274,6 +278,7 @@ class NotificationService {
       minutosDelDia,
       ocurrenciasPorRecordatorio,
       omitirHoy: omitirHoy,
+      dias: dias,
     );
 
     var programadas = 0;

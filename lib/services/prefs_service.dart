@@ -56,10 +56,14 @@ class SedeConfig {
 
   /// Días de la semana en los que se va a la sede (1 = lunes … 7 = domingo).
   ///
-  /// Solo condiciona el aviso de llegada. Con trabajo híbrido, pasar cerca de
-  /// la oficina un día de teletrabajo no debe preguntar si se marca la
-  /// entrada; el resto de la app no cambia, porque desde casa se trabaja y se
-  /// marca igual.
+  /// Es la semana de trabajo del usuario, y manda sobre todo lo que la app
+  /// dice por su cuenta: ni el aviso al llegar ni los recordatorios de marca
+  /// aparecen un día que no está en la lista. Con trabajo híbrido, un lunes
+  /// de teletrabajo no es un día de torniquete, así que ni pasar cerca de la
+  /// oficina ni que den las ocho justifican una notificación.
+  ///
+  /// Lo que se marca a mano no se toca: cualquier día se puede registrar
+  /// entera una jornada.
   final Set<int> diasOficina;
 
   const SedeConfig({

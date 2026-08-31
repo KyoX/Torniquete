@@ -366,6 +366,7 @@ class RecordatoriosCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final appProvider = context.watch<AppProvider>();
     final recordatorios = appProvider.recordatorios;
+    final sede = appProvider.sede;
 
     return Card(
       child: Padding(
@@ -385,8 +386,11 @@ class RecordatoriosCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Avisos de lunes a viernes. El de hoy no suena si esa marca ya '
-              'está hecha.',
+              sede.diasOficina.isEmpty
+                  ? 'Sin ningún día marcado en Sede no suena ningún aviso.'
+                  : 'Suenan ${sede.diasOficinaLegible.toLowerCase()}, los días '
+                      'que marcaste en Sede. El de hoy no suena si esa marca '
+                      'ya está hecha.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             for (final tipo in RecordatorioTipo.values)
@@ -741,36 +745,35 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
               title: const Text('Avisarme al llegar para marcar'),
               subtitle: Text(_estadoLlegada(sede)),
             ),
-            if (sede.avisarAlLlegar) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Días que vas a la sede',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (var dia = 1; dia <= 7; dia++)
-                    FilterChip(
-                      label: Text(SedeConfig.abreviaturasDias[dia - 1]),
-                      selected: sede.diasOficina.contains(dia),
-                      onSelected: (elegido) => _cambiarDiaOficina(dia, elegido),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                sede.diasOficina.isEmpty
-                    ? 'Sin ningún día marcado no se avisará nunca. La '
-                        'vigilancia queda apagada hasta que marques alguno.'
-                    : '${sede.diasOficinaLegible}. Los demás días puedes pasar '
-                        'por la sede sin que se te pregunte nada.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 4),
-            ],
+            const SizedBox(height: 4),
+            Text(
+              'Días que vas a la sede',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (var dia = 1; dia <= 7; dia++)
+                  FilterChip(
+                    label: Text(SedeConfig.abreviaturasDias[dia - 1]),
+                    selected: sede.diasOficina.contains(dia),
+                    onSelected: (elegido) => _cambiarDiaOficina(dia, elegido),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              sede.diasOficina.isEmpty
+                  ? 'Sin ningún día marcado no llega nada: ni el recordatorio '
+                      'de marca ni el aviso al llegar.'
+                  : '${sede.diasOficinaLegible}. Los demás días no se te '
+                      'recuerda marcar ni se te pregunta nada al pasar por '
+                      'la sede.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
             if (sede.avisarAlLlegar && !_vigilancia.permisoDeFondo)
               Align(
                 alignment: Alignment.centerLeft,

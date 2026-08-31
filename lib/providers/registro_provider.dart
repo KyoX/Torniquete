@@ -532,8 +532,12 @@ class RegistroProvider extends ChangeNotifier {
 
   /// Vuelve a calcular los avisos de marca. Se rehacen en cada cambio porque
   /// el aviso de hoy sobra en cuanto la marca correspondiente ya está hecha.
+  ///
+  /// La sede se relee en vez de usar la del provider: los días de trabajo se
+  /// cambian desde Ajustes, y el aviso tiene que respetar el último valor.
   Future<void> _reprogramarRecordatoriosDeMarca() async {
     final configs = await _prefs.getRecordatorios();
+    final dias = (await _prefs.getSede()).diasOficina;
     final servicio = NotificationService.instance;
     // Un festivo o un día de vacaciones no necesita que le recuerden marcar.
     final justificado = registroHoy?.tipoDia.esJustificado ?? false;
@@ -547,6 +551,7 @@ class RegistroProvider extends ChangeNotifier {
         tipo: config.tipo,
         minutosDelDia: config.minutos,
         omitirHoy: justificado || _marcaYaHecha(config.tipo),
+        dias: dias,
       );
     }
   }

@@ -87,7 +87,8 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   de salida.
 - **Recordatorios de marca** (opcionales, apagados por defecto): avisos a la hora que
   elijas para no olvidar marcar la entrada, la pausa del almuerzo y la vuelta. Suenan
-  solo de lunes a viernes y el aviso del día se omite si esa marca ya está hecha.
+  solo los días de oficina que tengas marcados —de lunes a viernes por defecto— y el
+  aviso del día se omite si esa marca ya está hecha.
   En vez de una alarma diaria repetida se dejan programadas las próximas diez citas,
   que se recalculan cada vez que se abre la app o se registra una marca.
 - **Tipos de día**: cada día puede marcarse como *festivo*, *vacaciones*,
@@ -197,14 +198,20 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   solo se ofrece si hay una pausa abierta: sin esa condición, volver al
   radio a media mañana se leería como un regreso y preguntaría a destiempo.
 - **Días de oficina**: con trabajo híbrido, pasar por delante de la oficina un día
-  de teletrabajo no es motivo para preguntar si se marca la entrada. Los días en los
-  que sí se va —de lunes a viernes por defecto— se eligen en la misma tarjeta de
-  Sede y solo condicionan este aviso: desde casa se trabaja y se marca igual, así
-  que el resto de la app no cambia. El filtro se aplica **en el momento de la
+  de teletrabajo no es motivo para preguntar si se marca la entrada, ni que den las
+  ocho lo es para recordarte una marca que hoy no vas a hacer. Los días en los que sí
+  se va —de lunes a viernes por defecto— se eligen en la tarjeta de Sede y gobiernan
+  todo lo que la app dice por su cuenta: el aviso al llegar **y** los recordatorios
+  de marca. Lo que se registra a mano no se toca; cualquier día se puede marcar una
+  jornada entera. En el aviso de llegada el filtro se aplica **en el momento de la
   llegada** y no al registrar la geocerca, porque una geocerca se registra una vez y
   vive hasta el siguiente reinicio, mientras que lo que cambia cada madrugada es si
-  hoy toca oficina. Dejar la semana sin ningún día marcado retira la geocerca en vez
-  de dejar a Android despertando a la app para un aviso que nunca va a salir.
+  hoy toca oficina. En los recordatorios se aplica al calcular las próximas citas, y
+  cambiar la semana las recalcula al momento: son fechas concretas ya agendadas, así
+  que quitar el lunes no borraría por sí solo el aviso del lunes que viene. Dejar la
+  semana sin ningún día marcado retira la geocerca —en vez de dejar a Android
+  despertando a la app para un aviso que nunca va a salir— y deja los recordatorios
+  sin ninguna cita.
 
 ## Identidad visual
 
@@ -275,6 +282,7 @@ La lógica que se puede probar sin Android vive en funciones puras
 (`ReportsService`, `TimeUtils`, `GeoUtils`, `FestivosSV`,
 `RegistroProvider.marcaSugeridaAlLlegar`, `ReportsService.descuentoPendiente`,
 `DescuentoAlmuerzoService.revisar`, `SedeConfig.diasOficinaLegible`,
+`TimeUtils.proximasOcurrenciasHabiles` (días de oficina),
 `PausasService` (minutos de pausa, franja del almuerzo) y `Pausa.parsear`,
 `BackupService.construirCsv`, `ExportService.construirPdf` /
 `construirXlsx`, `WidgetService.resumir`), que es lo que cubren las
