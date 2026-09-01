@@ -187,6 +187,58 @@ class SedeConfig {
       );
 }
 
+/// Una segunda ubicación de trabajo, además de la sede principal: otra
+/// oficina, un coworking, una sucursal donde también se puede marcar.
+///
+/// No tiene sus propios días: [SedeConfig.diasOficina] ya dice "los días que
+/// se trabaja fuera de casa", y la segunda sede es solo otro sitio donde eso
+/// puede pasar esos mismos días, no una jornada aparte con su propio
+/// calendario.
+class SedeSecundaria {
+  final bool activa;
+  final double? latitud;
+  final double? longitud;
+  final int radioMetros;
+  final String? nombre;
+  final bool avisarAlLlegar;
+
+  const SedeSecundaria({
+    this.activa = false,
+    this.latitud,
+    this.longitud,
+    this.radioMetros = SedeConfig.defaultRadioMetros,
+    this.nombre,
+    this.avisarAlLlegar = false,
+  });
+
+  bool get tieneCoordenadas => latitud != null && longitud != null;
+
+  bool get vigente => activa && tieneCoordenadas;
+
+  /// Igual que [SedeConfig.vigilanciaLlegadaVigente], pero los días de
+  /// oficina se los presta la sede principal: aquí solo se reciben ya
+  /// resueltos.
+  bool vigilanciaLlegadaVigente(Set<int> diasOficina) =>
+      avisarAlLlegar && tieneCoordenadas && diasOficina.isNotEmpty;
+
+  SedeSecundaria copyWith({
+    bool? activa,
+    double? latitud,
+    double? longitud,
+    int? radioMetros,
+    String? nombre,
+    bool? avisarAlLlegar,
+  }) =>
+      SedeSecundaria(
+        activa: activa ?? this.activa,
+        latitud: latitud ?? this.latitud,
+        longitud: longitud ?? this.longitud,
+        radioMetros: radioMetros ?? this.radioMetros,
+        nombre: nombre ?? this.nombre,
+        avisarAlLlegar: avisarAlLlegar ?? this.avisarAlLlegar,
+      );
+}
+
 /// Cuántas horas se esperan de cada día de la semana.
 ///
 /// Antes la app solo sabía de dos metas —lunes a jueves y viernes— y le daba
@@ -344,11 +396,19 @@ class PrefsService {
   static const _keySedeNombre = 'sede_nombre';
   static const _keySedeAvisoLlegada = 'sede_aviso_llegada';
   static const _keySedeDiasOficina = 'sede_dias_oficina';
+  static const _keySede2Activa = 'sede2_activa';
+  static const _keySede2Lat = 'sede2_latitud';
+  static const _keySede2Lon = 'sede2_longitud';
+  static const _keySede2Radio = 'sede2_radio_m';
+  static const _keySede2Nombre = 'sede2_nombre';
+  static const _keySede2AvisoLlegada = 'sede2_aviso_llegada';
   static const _keyAsuetosActivos = 'asuetos_activos';
   static const _keySector = 'sector_laboral';
   static const _keyModoTema = 'modo_tema';
   static const _keyFondoWidget = 'fondo_widget';
   static const _keyDescuentoAlmuerzo = 'descuento_almuerzo_min';
+  static const _keyBloqueoActivo = 'bloqueo_activo';
+  static const _keyRespaldoAutomatico = 'respaldo_automatico_activo';
 
   static const double defaultMetaLJ = 8.5;
   static const double defaultMetaViernes = 6.5;
@@ -519,6 +579,36 @@ class PrefsService {
     }
   }
 
+  Future<SedeSecundaria> getSede2() async {
+    final prefs = await SharedPreferences.getInstance();
+    return SedeSecundaria(
+      activa: prefs.getBool(_keySede2Activa) ?? false,
+      latitud: prefs.getDouble(_keySede2Lat),
+      longitud: prefs.getDouble(_keySede2Lon),
+      radioMetros:
+          prefs.getInt(_keySede2Radio) ?? SedeConfig.defaultRadioMetros,
+      nombre: prefs.getString(_keySede2Nombre),
+      avisarAlLlegar: prefs.getBool(_keySede2AvisoLlegada) ?? false,
+    );
+  }
+
+  Future<void> guardarSede2(SedeSecundaria sede) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keySede2Activa, sede.activa);
+    await prefs.setBool(_keySede2AvisoLlegada, sede.avisarAlLlegar);
+    await prefs.setInt(_keySede2Radio, sede.radioMetros);
+    if (sede.latitud != null && sede.longitud != null) {
+      await prefs.setDouble(_keySede2Lat, sede.latitud!);
+      await prefs.setDouble(_keySede2Lon, sede.longitud!);
+    }
+    final nombre = sede.nombre?.trim();
+    if (nombre == null || nombre.isEmpty) {
+      await prefs.remove(_keySede2Nombre);
+    } else {
+      await prefs.setString(_keySede2Nombre, nombre);
+    }
+  }
+
   /// Encendido por defecto: reconocer los asuetos de ley acierta mucho más
   /// veces de las que se equivoca, y de todos modos solo sugiere.
   Future<bool> getAsuetosActivos() async {
@@ -529,6 +619,30 @@ class PrefsService {
   Future<void> setAsuetosActivos(bool valor) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyAsuetosActivos, valor);
+  }
+
+  /// Apagado por defecto: pedir huella o PIN cada vez que se abre la app es
+  /// una fricción que solo tiene sentido para quien la pide.
+  Future<bool> getBloqueoActivo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyBloqueoActivo) ?? false;
+  }
+
+  Future<void> setBloqueoActivo(bool valor) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyBloqueoActivo, valor);
+  }
+
+  /// Apagado por defecto: hacer un respaldo cada semana sin que nadie lo
+  /// pida es una decisión que le toca al usuario, no a la app.
+  Future<bool> getRespaldoAutomaticoActivo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyRespaldoAutomatico) ?? false;
+  }
+
+  Future<void> setRespaldoAutomaticoActivo(bool valor) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyRespaldoAutomatico, valor);
   }
 
   /// Sigue al teléfono mientras el usuario no elija otra cosa.
@@ -572,5 +686,15 @@ class PrefsService {
     await prefs.remove(_keySedeNombre);
     await prefs.setBool(_keySedeActiva, false);
     await prefs.setBool(_keySedeAvisoLlegada, false);
+  }
+
+  /// Olvida la segunda sede y apaga su vigilancia.
+  Future<void> borrarSede2() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keySede2Lat);
+    await prefs.remove(_keySede2Lon);
+    await prefs.remove(_keySede2Nombre);
+    await prefs.setBool(_keySede2Activa, false);
+    await prefs.setBool(_keySede2AvisoLlegada, false);
   }
 }

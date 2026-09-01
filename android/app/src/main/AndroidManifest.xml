@@ -11,6 +11,10 @@
          Ajustes. Desde Android 10 una geocerca solo dispara con la ubicacion
          concedida "todo el tiempo", que es lo que pide este permiso. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <!-- Opcional: solo se usa si el usuario activa "Bloqueo con huella o PIN"
+         en Ajustes, para pedir la huella o el PIN/patron ya configurados en
+         el telefono. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <application
         android:label="Torniquete"
         android:name="${applicationName}"

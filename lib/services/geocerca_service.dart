@@ -68,15 +68,16 @@ class GeocercaService {
     }
   }
 
-  /// Le pasa al sistema la sede a vigilar. Devuelve true si al terminar hay
-  /// una zona registrada de verdad: apagar el interruptor, borrar la sede,
-  /// dejar la semana sin días de oficina o que falte el permiso de fondo
-  /// devuelven false.
+  /// Le pasa al sistema la sede a vigilar —y, si la hay, la segunda—.
+  /// Devuelve true si al terminar hay al menos una zona registrada de
+  /// verdad: apagar los interruptores, borrar las sedes, dejar la semana sin
+  /// días de oficina o que falte el permiso de fondo devuelven false.
   ///
-  /// Los días de oficina viajan junto a la sede porque quien decide si hoy
-  /// toca preguntar es el propio receptor, con la app cerrada y sin forma de
-  /// consultar nada a Dart.
-  Future<bool> configurarSede(SedeConfig sede) async {
+  /// Los días de oficina viajan junto a la sede principal porque quien
+  /// decide si hoy toca preguntar es el propio receptor, con la app cerrada
+  /// y sin forma de consultar nada a Dart. La segunda sede no tiene los
+  /// suyos propios: usa los mismos.
+  Future<bool> configurarSede(SedeConfig sede, {SedeSecundaria? sede2}) async {
     final registrada = await _invocar<bool>('configurarSede', {
       'activa': sede.vigilanciaLlegadaVigente,
       'latitud': sede.latitud,
@@ -84,6 +85,11 @@ class GeocercaService {
       'radio': sede.radioMetros,
       'nombre': sede.nombre,
       'dias': (sede.diasOficina.toList()..sort()),
+      'activa2': sede2?.vigilanciaLlegadaVigente(sede.diasOficina) ?? false,
+      'latitud2': sede2?.latitud,
+      'longitud2': sede2?.longitud,
+      'radio2': sede2?.radioMetros,
+      'nombre2': sede2?.nombre,
     });
     return registrada ?? false;
   }

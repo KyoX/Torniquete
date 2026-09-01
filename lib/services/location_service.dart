@@ -33,6 +33,19 @@ enum PermisoDeFondo {
   servicioApagado,
 }
 
+/// La sede —principal o secundaria— contra la que resultó evaluada una
+/// marca, junto a la distancia y el radio de esa sede en concreto.
+@immutable
+class EvaluacionSede {
+  final EvaluacionGeocerca evaluacion;
+
+  /// Nombre de la sede que produjo esta evaluación, o null si no tiene uno
+  /// guardado.
+  final String? nombre;
+
+  const EvaluacionSede({required this.evaluacion, this.nombre});
+}
+
 /// Envuelve el acceso al GPS. Todo es opcional: si el permiso no está
 /// concedido o el GPS falla, [capturar] devuelve null y la app sigue
 /// funcionando igual que antes.
@@ -150,6 +163,45 @@ class LocationService {
       latitud: latitud,
       longitud: longitud,
     );
+  }
+
+  /// Compara unas coordenadas contra las sedes vigentes —la principal y,
+  /// si la hay, la segunda— y devuelve la que resulte "dentro" del radio, o
+  /// si ninguna lo está, la más cercana. Null si ninguna de las dos tiene
+  /// coordenadas guardadas.
+  EvaluacionSede? evaluarSedes(
+    SedeConfig sede, {
+    SedeSecundaria? sede2,
+    required double latitud,
+    required double longitud,
+  }) {
+    final candidatas = <EvaluacionSede>[];
+
+    final principal = evaluarSede(sede, latitud: latitud, longitud: longitud);
+    if (principal != null) {
+      candidatas.add(EvaluacionSede(evaluacion: principal, nombre: sede.nombre));
+    }
+    if (sede2 != null && sede2.vigente) {
+      final evaluacion = GeoUtils.evaluar(
+        sedeLatitud: sede2.latitud,
+        sedeLongitud: sede2.longitud,
+        radioMetros: sede2.radioMetros,
+        latitud: latitud,
+        longitud: longitud,
+      );
+      if (evaluacion != null) {
+        candidatas.add(EvaluacionSede(evaluacion: evaluacion, nombre: sede2.nombre));
+      }
+    }
+    if (candidatas.isEmpty) return null;
+
+    final dentro = candidatas.where((c) => c.evaluacion.dentro);
+    if (dentro.isNotEmpty) return dentro.first;
+
+    candidatas.sort(
+      (a, b) => a.evaluacion.distanciaMetros.compareTo(b.evaluacion.distanciaMetros),
+    );
+    return candidatas.first;
   }
 
   /// Obtiene la posición actual. Devuelve null si no hay permiso, el GPS

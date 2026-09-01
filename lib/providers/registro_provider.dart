@@ -51,6 +51,9 @@ class RegistroProvider extends ChangeNotifier {
   /// Configuración de la sede, para comparar cada marca contra la geocerca.
   SedeConfig sede = const SedeConfig();
 
+  /// Segunda sede, opcional: otra oficina, un coworking, una sucursal.
+  SedeSecundaria sede2 = const SedeSecundaria();
+
   /// Aviso pendiente de mostrar cuando una marca cae fuera de la sede.
   /// La pantalla lo consume con [limpiarAvisoGeocerca].
   String? avisoGeocerca;
@@ -74,11 +77,14 @@ class RegistroProvider extends ChangeNotifier {
   EvaluacionGeocerca? geocercaDe(String clave) {
     final ubicacion = ubicacionDe(clave);
     if (ubicacion == null) return null;
-    return LocationService.instance.evaluarSede(
-      sede,
-      latitud: ubicacion.latitud,
-      longitud: ubicacion.longitud,
-    );
+    return LocationService.instance
+        .evaluarSedes(
+          sede,
+          sede2: sede2,
+          latitud: ubicacion.latitud,
+          longitud: ubicacion.longitud,
+        )
+        ?.evaluacion;
   }
 
   /// Todo lo que se sabe de dónde se registró una marca, listo para la
@@ -202,6 +208,7 @@ class RegistroProvider extends ChangeNotifier {
     }
     ubicacionesHoy = await _db.getUbicacionesPorFecha(fecha);
     sede = await _prefs.getSede();
+    sede2 = await _prefs.getSede2();
     cargando = false;
     notifyListeners();
     await _recalcularYProgramar(nombreParaNotificacion: nombreUsuario);
@@ -516,17 +523,19 @@ class RegistroProvider extends ChangeNotifier {
   /// está en una sede distinta, en una visita a cliente o si el GPS se
   /// equivocó, así que no le corresponde bloquear nada.
   void _revisarGeocerca(UbicacionMarca ubicacion, {required bool manual}) {
-    final evaluacion = LocationService.instance.evaluarSede(
+    final resultado = LocationService.instance.evaluarSedes(
       sede,
+      sede2: sede2,
       latitud: ubicacion.latitud,
       longitud: ubicacion.longitud,
     );
-    if (evaluacion == null || evaluacion.dentro) {
+    if (resultado == null || resultado.evaluacion.dentro) {
       avisoGeocerca = null;
       return;
     }
-    final donde = sede.nombre?.trim().isNotEmpty == true
-        ? sede.nombre!.trim()
+    final evaluacion = resultado.evaluacion;
+    final donde = resultado.nombre?.trim().isNotEmpty == true
+        ? resultado.nombre!.trim()
         : 'la sede';
     avisoGeocerca = manual
         ? 'Marca registrada a ${evaluacion.distanciaLegible} de $donde '

@@ -242,4 +242,79 @@ void main() {
           DateTime(2026, 8, 31));
     });
   });
+
+  group('estadisticasPersonales', () {
+    test('promedia hora de entrada y de salida', () {
+      final registros = [
+        reg('2026-08-17', e1: '08:00', sr: '16:00', meta: 480),
+        reg('2026-08-18', e1: '08:30', sr: '17:00', meta: 480),
+      ];
+      final stats = ReportsService.estadisticasPersonales(
+        registros,
+        ahora: DateTime.parse('2026-08-18'),
+      );
+      expect(stats.minutosEntradaPromedio, 8 * 60 + 15);
+      expect(stats.minutosSalidaPromedio, 16 * 60 + 30);
+    });
+
+    test('encuentra el día de la semana que más rinde', () {
+      final registros = [
+        reg('2026-08-17', e1: '08:00', sr: '17:00', meta: 480), // lunes, 9h
+        reg('2026-08-24', e1: '08:00', sr: '17:00', meta: 480), // lunes, 9h
+        reg('2026-08-18', e1: '08:00', sr: '13:00', meta: 480), // martes, 5h
+      ];
+      final stats = ReportsService.estadisticasPersonales(
+        registros,
+        ahora: DateTime.parse('2026-08-24'),
+      );
+      expect(stats.diaMasProductivo, DateTime.monday);
+      expect(stats.minutosDiaMasProductivo, 9 * 60);
+    });
+
+    test('la racha cuenta días laborales consecutivos cumplidos', () {
+      final registros = [
+        reg('2026-08-17', e1: '08:00', sr: '16:00', meta: 480), // lunes, cumple
+        reg('2026-08-18', e1: '08:00', sr: '16:00', meta: 480), // martes, cumple
+        reg('2026-08-19', e1: '08:00', sr: '13:00', meta: 480), // miércoles, no
+      ];
+      final stats = ReportsService.estadisticasPersonales(
+        registros,
+        ahora: DateTime.parse('2026-08-19'),
+      );
+      expect(stats.rachaActual, 0);
+      expect(stats.mejorRacha, 2);
+    });
+
+    test('un día festivo no rompe la racha', () {
+      final registros = [
+        reg('2026-08-17', e1: '08:00', sr: '16:00', meta: 480),
+        reg('2026-08-18', meta: 0, tipo: TipoDia.festivo),
+        reg('2026-08-19', e1: '08:00', sr: '16:00', meta: 480),
+      ];
+      final stats = ReportsService.estadisticasPersonales(
+        registros,
+        ahora: DateTime.parse('2026-08-19'),
+      );
+      expect(stats.rachaActual, 2);
+    });
+
+    test('el día de hoy en curso, sin salida, no rompe la racha', () {
+      final registros = [
+        reg('2026-08-17', e1: '08:00', sr: '16:00', meta: 480),
+        reg('2026-08-18', e1: '08:00', meta: 480), // hoy, sin salida todavía
+      ];
+      final stats = ReportsService.estadisticasPersonales(
+        registros,
+        ahora: DateTime.parse('2026-08-18'),
+      );
+      expect(stats.rachaActual, 1);
+    });
+
+    test('sin días con horas no hay nada que calcular', () {
+      final stats = ReportsService.estadisticasPersonales(const []);
+      expect(stats.diasConHoras, 0);
+      expect(stats.minutosEntradaPromedio, isNull);
+      expect(stats.diaMasProductivo, isNull);
+    });
+  });
 }

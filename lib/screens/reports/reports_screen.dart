@@ -9,6 +9,7 @@ import 'balance_report_tab.dart';
 import 'daily_report_tab.dart';
 import 'export_report_sheet.dart';
 import 'monthly_report_tab.dart';
+import 'personal_stats_tab.dart';
 import 'projection_report_tab.dart';
 import 'weekly_report_tab.dart';
 
@@ -96,7 +97,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final metaDiaria = context.watch<AppProvider>().metaDiariaTipicaMinutos;
 
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Reportes'),
@@ -115,6 +116,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
               Tab(text: 'Mensual'),
               Tab(text: 'Proyección'),
               Tab(text: 'Banco de horas'),
+              Tab(text: 'Estadísticas'),
             ],
           ),
         ),
@@ -149,6 +151,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   metaDiariaMinutos: metaDiaria,
                   onCambio: _recargar,
                 ),
+                PersonalStatsTab(registros: datos.registros),
               ],
             );
           },

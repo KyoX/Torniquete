@@ -43,17 +43,18 @@ class GeocercaReceiver : BroadcastReceiver() {
             Log.w(TAG, "Evento de geocerca con error: ${evento.errorCode}")
             return
         }
-        if (evento.triggeringGeofences?.none { it.requestId == GeocercaLlegada.ID_SEDE } == true) {
-            return
-        }
+        val idSede = evento.triggeringGeofences
+            ?.firstOrNull { it.requestId == GeocercaLlegada.ID_SEDE || it.requestId == GeocercaLlegada.ID_SEDE2 }
+            ?.requestId
+            ?: return
         // De la llegada solo interesa la permanencia. La entrada llega tambien
         // porque se registro para no depender de que el fabricante entregue la
         // otra, pero avisar con ella convertiria cualquier paso cerca en el
         // aviso del dia. La salida no tiene ese problema: es un solo instante,
         // y ademas solo se pregunta cerca de la hora de salida.
         when (evento.geofenceTransition) {
-            Geofence.GEOFENCE_TRANSITION_DWELL -> GeocercaLlegada.avisar(context)
-            Geofence.GEOFENCE_TRANSITION_EXIT -> GeocercaLlegada.avisarSalida(context)
+            Geofence.GEOFENCE_TRANSITION_DWELL -> GeocercaLlegada.avisar(context, idSede)
+            Geofence.GEOFENCE_TRANSITION_EXIT -> GeocercaLlegada.avisarSalida(context, idSede)
         }
     }
 

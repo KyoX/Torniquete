@@ -248,6 +248,44 @@ class ResumenPeriodo {
   bool get metaCumplida => diferenciaMinutos >= 0;
 }
 
+/// Patrones que solo se ven mirando el historial completo, no un día, una
+/// semana o un mes por separado.
+class EstadisticasPersonales {
+  /// Minuto del día promedio de entrada. Null sin ningún día con entrada.
+  final int? minutosEntradaPromedio;
+
+  /// Minuto del día promedio de salida real. Null sin ningún día cerrado.
+  final int? minutosSalidaPromedio;
+
+  /// Día de la semana (1=lunes … 7=domingo) con más minutos trabajados en
+  /// promedio. Null sin días con horas registradas.
+  final int? diaMasProductivo;
+
+  /// Minutos promedio trabajados en [diaMasProductivo].
+  final int minutosDiaMasProductivo;
+
+  /// Días laborales consecutivos, contando desde el más reciente hacia
+  /// atrás, que cumplieron su meta.
+  final int rachaActual;
+
+  /// La racha más larga de cumplimiento de todo el historial.
+  final int mejorRacha;
+
+  /// Días con horas registradas en todo el historial: el tamaño de la
+  /// muestra sobre la que se calculó todo lo demás.
+  final int diasConHoras;
+
+  const EstadisticasPersonales({
+    this.minutosEntradaPromedio,
+    this.minutosSalidaPromedio,
+    this.diaMasProductivo,
+    this.minutosDiaMasProductivo = 0,
+    this.rachaActual = 0,
+    this.mejorRacha = 0,
+    this.diasConHoras = 0,
+  });
+}
+
 /// Funciones puras de agregación para las pantallas de reportes.
 /// No dependen de widgets ni de la base de datos directamente: reciben
 /// la lista de registros ya cargada.
@@ -390,6 +428,82 @@ class ReportsService {
     return ordenados
         .map((r) => DailyStat(registro: r, minutosTrabajados: minutosTrabajados(r)))
         .toList();
+  }
+
+  /// Patrones del historial completo: hora habitual de entrada y salida,
+  /// el día de la semana que más rinde y la racha de cumplimiento.
+  ///
+  /// [ahora] es el día que cuenta como "hoy" para no romper la racha por un
+  /// día en curso que todavía no tiene salida. Solo se pide para poder
+  /// probar la función con una fecha fija.
+  static EstadisticasPersonales estadisticasPersonales(
+    List<Registro> registros, {
+    DateTime? ahora,
+  }) {
+    final ordenados = [...registros]..sort((a, b) => a.fecha.compareTo(b.fecha));
+    final hoy = _fechaKey(ahora ?? DateTime.now());
+
+    final conEntrada = <int>[
+      for (final r in ordenados)
+        if (_minutos(r.entrada1) != null) _minutos(r.entrada1)!,
+    ];
+    final conSalida = <int>[
+      for (final r in ordenados)
+        if (_minutos(r.salidaReal) != null) _minutos(r.salidaReal)!,
+    ];
+
+    final conHoras = ordenados.where(tieneHoras).toList();
+
+    // Minutos trabajados promedio por día de la semana, para encontrar el
+    // que más rinde.
+    final porDiaSemana = <int, List<int>>{};
+    for (final r in conHoras) {
+      final diaSemana = DateTime.parse(r.fecha).weekday;
+      porDiaSemana.putIfAbsent(diaSemana, () => []).add(minutosTrabajados(r));
+    }
+    int? diaMasProductivo;
+    int minutosDiaMasProductivo = 0;
+    for (final entry in porDiaSemana.entries) {
+      final promedio =
+          entry.value.fold<int>(0, (s, m) => s + m) ~/ entry.value.length;
+      if (diaMasProductivo == null || promedio > minutosDiaMasProductivo) {
+        diaMasProductivo = entry.key;
+        minutosDiaMasProductivo = promedio;
+      }
+    }
+
+    // La racha recorre el historial en orden cronológico: un día laboral que
+    // no cumplió la rompe, uno justificado ni la extiende ni la rompe (no
+    // había nada que cumplir), y el día de hoy en curso tampoco la rompe
+    // aunque todavía no tenga salida.
+    int racha = 0;
+    int mejor = 0;
+    for (final r in ordenados) {
+      if (!r.tipoDia.exigeMeta || r.tipoDia.esJustificado) continue;
+      final minutos = minutosTrabajados(r);
+      if (minutos > 0 && minutos >= r.metaEfectivaMinutos) {
+        racha++;
+        if (racha > mejor) mejor = racha;
+      } else if (minutos > 0 || r.fecha.compareTo(hoy) < 0) {
+        racha = 0;
+      }
+    }
+
+    return EstadisticasPersonales(
+      minutosEntradaPromedio: conEntrada.isEmpty
+          ? null
+          : (conEntrada.fold<int>(0, (s, m) => s + m) / conEntrada.length)
+              .round(),
+      minutosSalidaPromedio: conSalida.isEmpty
+          ? null
+          : (conSalida.fold<int>(0, (s, m) => s + m) / conSalida.length)
+              .round(),
+      diaMasProductivo: diaMasProductivo,
+      minutosDiaMasProductivo: minutosDiaMasProductivo,
+      rachaActual: racha,
+      mejorRacha: mejor,
+      diasConHoras: conHoras.length,
+    );
   }
 
   static List<WeeklyStat> weeklyStats(List<Registro> registros) {

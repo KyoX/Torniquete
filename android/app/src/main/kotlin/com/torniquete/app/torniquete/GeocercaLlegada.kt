@@ -34,8 +34,11 @@ import com.google.android.gms.location.LocationServices
 object GeocercaLlegada {
     private const val TAG = "GeocercaLlegada"
 
-    /** Una sola zona vigilada: la sede que el usuario configuro. */
+    /** La sede principal que el usuario configuro. */
     const val ID_SEDE = "torniquete_sede"
+
+    /** La segunda sede, opcional: otra oficina, un coworking, una sucursal. */
+    const val ID_SEDE2 = "torniquete_sede2"
 
     const val CANAL_ID = "torniquete_llegada"
     private const val CANAL_NOMBRE = "Llegada al trabajo"
@@ -110,7 +113,8 @@ object GeocercaLlegada {
      * y despues de cada reinicio del telefono, y siempre deja lo mismo.
      */
     fun sincronizar(context: Context, alTerminar: ((Boolean) -> Unit)? = null) {
-        if (!GeocercaStore.sedeActiva(context) || !puedeVigilar(context)) {
+        val hayAlgunaSede = GeocercaStore.sedeActiva(context) || GeocercaStore.sede2Activa(context)
+        if (!hayAlgunaSede || !puedeVigilar(context)) {
             cancelar(context)
             alTerminar?.invoke(false)
             return
@@ -118,17 +122,10 @@ object GeocercaLlegada {
         registrar(context, alTerminar)
     }
 
-    // El permiso se comprueba en puedeVigilar(), que es lo unico por lo que
-    // se llega hasta aqui; lint no sabe seguir esa indireccion.
-    @SuppressLint("MissingPermission")
-    private fun registrar(context: Context, alTerminar: ((Boolean) -> Unit)?) {
-        val geocerca = Geofence.Builder()
-            .setRequestId(ID_SEDE)
-            .setCircularRegion(
-                GeocercaStore.latitud(context),
-                GeocercaStore.longitud(context),
-                GeocercaStore.radioMetros(context).toFloat(),
-            )
+    private fun geocercaDe(id: String, latitud: Double, longitud: Double, radioMetros: Int): Geofence =
+        Geofence.Builder()
+            .setRequestId(id)
+            .setCircularRegion(latitud, longitud, radioMetros.toFloat())
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
             // La entrada se registra tambien porque hay fabricantes que no
             // entregan la permanencia si no se pidio; el receptor filtra igual.
@@ -142,15 +139,39 @@ object GeocercaLlegada {
             .setLoiteringDelay(PERMANENCIA_MS)
             .build()
 
-        val peticion = GeofencingRequest.Builder()
+    // El permiso se comprueba en puedeVigilar(), que es lo unico por lo que
+    // se llega hasta aqui; lint no sabe seguir esa indireccion.
+    @SuppressLint("MissingPermission")
+    private fun registrar(context: Context, alTerminar: ((Boolean) -> Unit)?) {
+        val builder = GeofencingRequest.Builder()
             // Si al configurar la sede el usuario ya esta dentro, se le avisa
             // sin tener que salir y volver a entrar. La salida se deja fuera
             // del disparo inicial a proposito: registrar la geocerca estando
             // lejos de la oficina —que es lo normal— dispararia una salida
             // en cada arranque de la app.
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_DWELL)
-            .addGeofence(geocerca)
-            .build()
+
+        if (GeocercaStore.sedeActiva(context)) {
+            builder.addGeofence(
+                geocercaDe(
+                    ID_SEDE,
+                    GeocercaStore.latitud(context),
+                    GeocercaStore.longitud(context),
+                    GeocercaStore.radioMetros(context),
+                ),
+            )
+        }
+        if (GeocercaStore.sede2Activa(context)) {
+            builder.addGeofence(
+                geocercaDe(
+                    ID_SEDE2,
+                    GeocercaStore.latitud2(context),
+                    GeocercaStore.longitud2(context),
+                    GeocercaStore.radioMetros2(context),
+                ),
+            )
+        }
+        val peticion = builder.build()
 
         try {
             cliente(context).addGeofences(peticion, disparador(context))
@@ -181,18 +202,22 @@ object GeocercaLlegada {
     /**
      * Lanza la pregunta de si marcar, si es que hay algo que marcar y no se
      * pregunto ya hoy por lo mismo.
+     *
+     * [sedeId] es la geocerca que disparo el evento —la principal o la
+     * segunda— y solo se usa para nombrar el sitio en el texto del aviso.
      */
     // areNotificationsEnabled() ya descarto el caso sin permiso, y notify()
     // esta ademas envuelto en su propio catch.
     @SuppressLint("MissingPermission")
-    fun avisar(context: Context) {
+    fun avisar(context: Context, sedeId: String) {
         val tipo = GeocercaStore.marcaAOfrecer(context) ?: return
         if (GeocercaStore.yaAvisado(context, tipo)) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
         crearCanal(context)
 
-        val donde = GeocercaStore.nombreSede(context)?.takeIf { it.isNotBlank() } ?: "la sede"
+        val donde =
+            GeocercaStore.nombreDeSede(context, sedeId)?.takeIf { it.isNotBlank() } ?: "la sede"
         // La otra marca posible es reanudar: se dejo una pausa abierta y el
         // telefono ha vuelto a la sede. No se dice "almuerzo" porque la pausa
         // puede haber sido cualquier cosa; eso lo decide Dart por la hora.
@@ -237,14 +262,15 @@ object GeocercaLlegada {
      * diligencia a media mañana y la pregunta es una sola al dia.
      */
     @SuppressLint("MissingPermission")
-    fun avisarSalida(context: Context) {
+    fun avisarSalida(context: Context, sedeId: String) {
         val tipo = GeocercaStore.marcaSalidaAOfrecer(context) ?: return
         if (GeocercaStore.yaAvisado(context, tipo)) return
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
         crearCanalSalida(context)
 
-        val donde = GeocercaStore.nombreSede(context)?.takeIf { it.isNotBlank() } ?: "la sede"
+        val donde =
+            GeocercaStore.nombreDeSede(context, sedeId)?.takeIf { it.isNotBlank() } ?: "la sede"
         // El momento del evento, no el del toque: la hora que vale es aquella
         // en la que el telefono salio del radio, y el aviso puede quedarse un
         // buen rato en la barra antes de que alguien lo mire.

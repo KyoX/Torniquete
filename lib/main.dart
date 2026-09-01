@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -5,7 +7,8 @@ import 'package:provider/provider.dart';
 
 import 'providers/app_provider.dart';
 import 'providers/registro_provider.dart';
-import 'screens/root_screen.dart';
+import 'screens/lock_gate.dart';
+import 'services/backup_scheduler.dart';
 import 'services/notification_service.dart';
 import 'services/prefs_service.dart';
 import 'theme/app_theme.dart';
@@ -17,6 +20,9 @@ void main() async {
   // El tema se lee antes de pintar el primer cuadro: si se leyera después,
   // quien tenga elegido el oscuro vería un destello blanco al abrir.
   final modoTema = await PrefsService().getModoTema();
+  // No se espera: si el respaldo automático sigue activo, re-registrarlo no
+  // tiene que retrasar el primer cuadro.
+  unawaited(BackupScheduler.instance.reactivarSiCorresponde());
   runApp(TorniqueteApp(modoTema: modoTema));
 }
 
@@ -55,7 +61,7 @@ class TorniqueteApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: const RootScreen(),
+          home: const LockGate(),
         ),
       ),
     );

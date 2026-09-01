@@ -154,6 +154,18 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   en JSON** (días, ubicaciones, movimientos del banco y configuración) y se restaura
   desde uno. Restaurar reemplaza todo el contenido de la app dentro de una
   transacción, así que si algo falla a mitad la base de datos queda como estaba.
+  El **respaldo automático semanal** (opcional, apagado por defecto) hace lo mismo
+  sin que nadie lo pida: una tarea en segundo plano (`workmanager`) escribe un
+  respaldo cada semana en una carpeta propia y persistente del teléfono —no la
+  temporal que usa el resto de exportaciones, que el sistema puede limpiar en
+  cualquier momento— y conserva solo los últimos seis, borrando el resto.
+- **Bloqueo con huella o PIN** (opcional, apagado por defecto): *Ajustes →
+  Seguridad* pide la huella, el PIN, el patrón o la contraseña que el usuario ya
+  tiene configurados en el teléfono —no una clave propia de la app— antes de
+  activar el interruptor, para comprobar que puede desbloquear antes de dejarlo
+  encerrado fuera de su propia app. Una vez activo, la app lo vuelve a pedir cada
+  vez que se abre y cada vez que vuelve de segundo plano, incluida la entrada
+  directa desde una notificación de marca.
 - **Widget de inicio y ficha de Ajustes rápidos**: el widget muestra el progreso del
   día, la hora estimada de salida, la entrada, las pausas y la salida sin abrir la
   app; la ficha de
@@ -184,7 +196,12 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   a un mes** concreto en vez de recorrer todos los de en medio.
 - **Reportes**: cumplimiento diario, semanal y mensual, proyección de cumplimiento
   de la meta del mes y balance histórico acumulado de horas, con exportación a PDF
-  y Excel del periodo que se elija.
+  y Excel del periodo que se elija. Una pestaña más, **Estadísticas**, describe el
+  hábito en vez de juzgarlo contra una meta: hora habitual de entrada y de salida,
+  el día de la semana que más rinde y la racha actual (y la mejor histórica) de
+  días que cumplieron su meta. Un festivo o unas vacaciones no rompen la racha —no
+  había nada que cumplir ese día— y el día de hoy en curso, sin salida todavía,
+  tampoco la rompe.
 - **Guardar ubicación** (opcional, desactivada por defecto): al activarla en Ajustes
   se pide el permiso de ubicación y, desde ese momento, cada marca guarda también
   las coordenadas donde se registró. Sirve como evidencia ante una auditoría de que
@@ -235,6 +252,14 @@ Como la app no viene de Play Store, Android puede mostrar advertencias al instal
   jornada ya cerrada tampoco se reabre por volver a pasar por la sede. El regreso
   solo se ofrece si hay una pausa abierta: sin esa condición, volver al
   radio a media mañana se leería como un regreso y preguntaría a destiempo.
+- **Segunda sede** (opcional): además de la sede principal, *Ajustes → Segunda
+  sede* admite otro sitio de trabajo —un coworking, una sucursal, otra
+  oficina— con su propia ubicación, radio y aviso de llegada. No tiene
+  calendario propio: usa los mismos días de oficina de la sede principal, así
+  que no hay una segunda lista de días que mantener sincronizada. Al marcar
+  lejos de las dos, el aviso compara contra la más cercana y dice cuál es. La
+  vigilancia registra hasta dos geocercas a la vez con el mismo
+  `GeofencingClient`, y cada una avisa con su propio nombre.
 - **Días de oficina**: con trabajo híbrido, pasar por delante de la oficina un día
   de teletrabajo no es motivo para preguntar si se marca la entrada, ni que den las
   ocho lo es para recordarte una marca que hoy no vas a hacer. Los días en los que sí

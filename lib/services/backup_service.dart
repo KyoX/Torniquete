@@ -209,6 +209,7 @@ class BackupService {
     final ubicaciones = await _db.getTodasLasUbicaciones();
     final movimientos = await _db.getMovimientos();
     final sede = await _prefs.getSede();
+    final sede2 = await _prefs.getSede2();
     final metas = await _prefs.getMetas();
 
     return {
@@ -232,6 +233,14 @@ class BackupService {
           'nombre': sede.nombre,
           'aviso_llegada': sede.avisarAlLlegar,
           'dias_oficina': sede.diasOficina.toList()..sort(),
+        },
+        'sede2': {
+          'activa': sede2.activa,
+          'latitud': sede2.latitud,
+          'longitud': sede2.longitud,
+          'radio_m': sede2.radioMetros,
+          'nombre': sede2.nombre,
+          'aviso_llegada': sede2.avisarAlLlegar,
         },
       },
       'registros': registros.map((r) => r.toMap()..remove('id')).toList(),
@@ -372,6 +381,20 @@ class BackupService {
         diasOficina: _diasOficina(sede['dias_oficina']),
       ));
     }
+    // Un respaldo anterior a la segunda sede simplemente no trae la clave, y
+    // entonces se deja como está: sin sede2 no hay nada que restaurar.
+    final sede2 = config['sede2'];
+    if (sede2 is Map) {
+      await _prefs.guardarSede2(SedeSecundaria(
+        activa: sede2['activa'] == true,
+        latitud: (sede2['latitud'] as num?)?.toDouble(),
+        longitud: (sede2['longitud'] as num?)?.toDouble(),
+        radioMetros: (sede2['radio_m'] as num?)?.toInt() ??
+            SedeConfig.defaultRadioMetros,
+        nombre: sede2['nombre'] as String?,
+        avisarAlLlegar: sede2['aviso_llegada'] == true,
+      ));
+    }
   }
 
   /// Los días de oficina del respaldo. Un respaldo anterior a este ajuste no
@@ -390,6 +413,71 @@ class BackupService {
     return valor.whereType<Map>().map((m) {
       return {for (final entrada in m.entries) '${entrada.key}': entrada.value};
     }).toList();
+  }
+
+  // ------------------------------------------------------- Respaldo automático
+
+  /// Cuántos respaldos automáticos se conservan. Uno por semana, así que
+  /// bastan para cubrir mes y medio sin llenar el teléfono de archivos.
+  static const int maxRespaldosAutomaticos = 6;
+
+  static const String _prefijoRespaldoAutomatico = 'auto-';
+
+  /// Igual que [crearRespaldo], pero sin pasar por el selector de compartir:
+  /// escribe el JSON en un directorio propio y persistente (no el temporal
+  /// que usa el resto de exportaciones, que el sistema puede limpiar en
+  /// cualquier momento) y borra los más viejos si ya hay
+  /// [maxRespaldosAutomaticos]. Pensado para que lo dispare una tarea
+  /// periódica en segundo plano, sin nadie mirando la pantalla.
+  Future<File> crearRespaldoAutomatico() async {
+    final json = await construirRespaldo();
+    final dir = await _directorioRespaldosAutomaticos();
+    final archivo = File(p.join(
+      dir.path,
+      '$_prefijoRespaldoAutomatico${_selloDeTiempo()}.json',
+    ));
+    await archivo.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(json),
+      encoding: utf8,
+    );
+    await _rotar(dir);
+    return archivo;
+  }
+
+  /// Los respaldos automáticos guardados, del más reciente al más viejo.
+  Future<List<File>> respaldosAutomaticos() async {
+    final dir = await _directorioRespaldosAutomaticos();
+    return _ordenados(dir);
+  }
+
+  Future<Directory> _directorioRespaldosAutomaticos() async {
+    final base = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(base.path, 'respaldos_automaticos'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  /// Borra los respaldos automáticos que sobren por encima de
+  /// [maxRespaldosAutomaticos], empezando por los más viejos.
+  Future<void> _rotar(Directory dir) async {
+    final archivos = await _ordenados(dir);
+    for (final archivo in archivos.skip(maxRespaldosAutomaticos)) {
+      await archivo.delete();
+    }
+  }
+
+  /// Los archivos de respaldo automático del directorio, del más reciente al
+  /// más viejo. El sello de tiempo del nombre ordena igual que la fecha real
+  /// porque va de año a minuto, de mayor a menor unidad.
+  Future<List<File>> _ordenados(Directory dir) async {
+    final archivos = await dir
+        .list()
+        .where((e) =>
+            e is File && p.basename(e.path).startsWith(_prefijoRespaldoAutomatico))
+        .cast<File>()
+        .toList();
+    archivos.sort((a, b) => p.basename(b.path).compareTo(p.basename(a.path)));
+    return archivos;
   }
 
   // ------------------------------------------------------------- Archivos

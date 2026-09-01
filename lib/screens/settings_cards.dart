@@ -5,11 +5,13 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../providers/registro_provider.dart';
 import '../services/asuetos_service.dart';
+import '../services/backup_scheduler.dart';
 import '../services/backup_service.dart';
 import '../services/db_service.dart';
 import '../services/descuento_almuerzo_service.dart';
 import '../services/geocerca_service.dart';
 import '../services/location_service.dart';
+import '../services/lock_service.dart';
 import '../services/prefs_service.dart';
 import '../services/widget_service.dart';
 import '../theme/app_theme.dart';
@@ -1043,6 +1045,318 @@ class _SedeCardState extends State<SedeCard> with WidgetsBindingObserver {
   }
 }
 
+/// Una segunda ubicación de trabajo: otra oficina, un coworking, una
+/// sucursal. Usa los mismos días de oficina que la sede principal — no tiene
+/// calendario propio — así que aquí no hay nada parecido a los chips de días
+/// de [SedeCard].
+class Sede2Card extends StatefulWidget {
+  const Sede2Card({super.key});
+
+  @override
+  State<Sede2Card> createState() => _Sede2CardState();
+}
+
+class _Sede2CardState extends State<Sede2Card> {
+  bool _capturando = false;
+  bool _procesandoLlegada = false;
+  int? _radioArrastrado;
+
+  void _avisar(String mensaje, {SnackBarAction? accion}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(mensaje), action: accion),
+    );
+  }
+
+  Future<void> _usarUbicacionActual() async {
+    final appProvider = context.read<AppProvider>();
+    setState(() => _capturando = true);
+    try {
+      final permiso = await LocationService.instance.solicitarPermiso();
+      if (!mounted) return;
+      switch (permiso) {
+        case PermisoUbicacion.concedido:
+          break;
+        case PermisoUbicacion.servicioApagado:
+          _avisar(
+            'El GPS del teléfono está apagado.',
+            accion: SnackBarAction(
+              label: 'Activar',
+              onPressed: LocationService.instance.abrirAjustesDeUbicacion,
+            ),
+          );
+          return;
+        case PermisoUbicacion.denegadoParaSiempre:
+          _avisar(
+            'El permiso de ubicación está bloqueado para esta app.',
+            accion: SnackBarAction(
+              label: 'Ajustes',
+              onPressed: LocationService.instance.abrirAjustesDeLaApp,
+            ),
+          );
+          return;
+        case PermisoUbicacion.denegado:
+          _avisar('Sin permiso de ubicación no se puede guardar la sede.');
+          return;
+      }
+
+      final posicion = await LocationService.instance.capturar();
+      if (!mounted) return;
+      if (posicion == null) {
+        _avisar('No se pudo leer la ubicación. Inténtalo junto a una ventana.');
+        return;
+      }
+      await appProvider.guardarSede2(
+        appProvider.sede2.copyWith(
+          latitud: posicion.latitude,
+          longitud: posicion.longitude,
+          activa: true,
+        ),
+      );
+      if (!mounted) return;
+      _avisar('Segunda sede guardada en tu ubicación actual.');
+    } finally {
+      if (mounted) setState(() => _capturando = false);
+    }
+  }
+
+  Future<void> _cambiarAvisoLlegada(bool valor) async {
+    final appProvider = context.read<AppProvider>();
+    if (!valor) {
+      await appProvider.guardarSede2(
+        appProvider.sede2.copyWith(avisarAlLlegar: false),
+      );
+      _avisar('Ya no se te avisará al llegar a esta sede.');
+      return;
+    }
+
+    setState(() => _procesandoLlegada = true);
+    try {
+      final permiso = await LocationService.instance.solicitarPermisoDeFondo();
+      if (!mounted) return;
+      final vigilando = await appProvider.guardarSede2(
+        appProvider.sede2.copyWith(avisarAlLlegar: true),
+      );
+      if (!mounted) return;
+
+      switch (permiso) {
+        case PermisoDeFondo.concedido:
+          _avisar(vigilando
+              ? 'Listo: al llegar a esta sede te preguntaré si marco.'
+              : 'Android no aceptó vigilar la sede. Revisa que los días de '
+                  'oficina de la sede principal no estén vacíos.');
+        case PermisoDeFondo.soloEnUso:
+          _avisar(
+            'Falta conceder la ubicación como "Permitir todo el tiempo": sin '
+            'ella Android no avisa con la app cerrada.',
+            accion: SnackBarAction(
+              label: 'Ajustes',
+              onPressed: LocationService.instance.abrirAjustesDeLaApp,
+            ),
+          );
+        case PermisoDeFondo.servicioApagado:
+          _avisar(
+            'El GPS del teléfono está apagado.',
+            accion: SnackBarAction(
+              label: 'Activar',
+              onPressed: LocationService.instance.abrirAjustesDeUbicacion,
+            ),
+          );
+        case PermisoDeFondo.sinPermiso:
+          _avisar(
+            'Sin permiso de ubicación no se puede vigilar la llegada.',
+            accion: SnackBarAction(
+              label: 'Ajustes',
+              onPressed: LocationService.instance.abrirAjustesDeLaApp,
+            ),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _procesandoLlegada = false);
+    }
+  }
+
+  Future<void> _editarNombre() async {
+    final appProvider = context.read<AppProvider>();
+    final controller =
+        TextEditingController(text: appProvider.sede2.nombre ?? '');
+    final nombre = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nombre de la segunda sede'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            hintText: 'Coworking, sucursal norte...',
+            border: OutlineInputBorder(),
+          ),
+          maxLength: 40,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (nombre == null) return;
+    await appProvider.guardarSede2(appProvider.sede2.copyWith(nombre: nombre));
+  }
+
+  Future<void> _olvidar() async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Olvidar segunda sede'),
+        content: const Text(
+          'Se borrarán las coordenadas guardadas de esta sede y dejarás de '
+          'recibir avisos de ella. Las marcas no se tocan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Olvidar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmado != true || !mounted) return;
+    await context.read<AppProvider>().borrarSede2();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appProvider = context.watch<AppProvider>();
+    final sede2 = appProvider.sede2;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.apartment_outlined),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Segunda sede',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (_capturando || _procesandoLlegada)
+                  const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Otra oficina, un coworking, una sucursal: cualquier otro sitio '
+              'donde también se trabaje, los mismos días que la sede '
+              'principal.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (sede2.tieneCoordenadas) ...[
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: sede2.activa,
+                onChanged: (valor) => appProvider
+                    .guardarSede2(sede2.copyWith(activa: valor)),
+                title: const Text('Avisarme si marco lejos de aquí'),
+                subtitle: const Text('Solo es un aviso: la marca se guarda igual.'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: sede2.avisarAlLlegar,
+                onChanged: _procesandoLlegada ? null : _cambiarAvisoLlegada,
+                title: const Text('Preguntarme al llegar y al salir'),
+                subtitle: const Text(
+                  'Misma pregunta que en la sede principal, pero para este '
+                  'segundo sitio.',
+                ),
+              ),
+              const SizedBox(height: 4),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.label_outline),
+                title: Text(
+                  sede2.nombre?.trim().isNotEmpty == true
+                      ? sede2.nombre!.trim()
+                      : 'Sin nombre',
+                ),
+                subtitle: Text(
+                  '${sede2.latitud!.toStringAsFixed(5)}, '
+                  '${sede2.longitud!.toStringAsFixed(5)}',
+                ),
+                trailing: IconButton(
+                  tooltip: 'Cambiar el nombre',
+                  icon: const Icon(Icons.edit),
+                  onPressed: _editarNombre,
+                ),
+              ),
+              Text(
+                'Radio: ${_radioArrastrado ?? sede2.radioMetros} m',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              Slider(
+                value: (_radioArrastrado ?? sede2.radioMetros)
+                    .clamp(SedeConfig.minRadioMetros, SedeConfig.maxRadioMetros)
+                    .toDouble(),
+                min: SedeConfig.minRadioMetros.toDouble(),
+                max: SedeConfig.maxRadioMetros.toDouble(),
+                divisions:
+                    (SedeConfig.maxRadioMetros - SedeConfig.minRadioMetros) ~/ 50,
+                label: '${_radioArrastrado ?? sede2.radioMetros} m',
+                onChanged: (valor) =>
+                    setState(() => _radioArrastrado = valor.round()),
+                onChangeEnd: (valor) async {
+                  await appProvider.guardarSede2(
+                      sede2.copyWith(radioMetros: valor.round()));
+                  if (mounted) setState(() => _radioArrastrado = null);
+                },
+              ),
+            ],
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _capturando ? null : _usarUbicacionActual,
+              icon: const Icon(Icons.my_location),
+              label: Text(sede2.tieneCoordenadas
+                  ? 'Actualizar con mi ubicación actual'
+                  : 'Agregar una segunda sede aquí'),
+            ),
+            if (sede2.tieneCoordenadas)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _olvidar,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Olvidar segunda sede'),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Exportar el reporte de cumplimiento (PDF o Excel), volcar el historial a
 /// CSV, hacer un respaldo completo y restaurarlo.
 class DatosCard extends StatefulWidget {
@@ -1053,7 +1367,34 @@ class DatosCard extends StatefulWidget {
 }
 
 class _DatosCardState extends State<DatosCard> {
+  final PrefsService _prefs = PrefsService();
   bool _ocupado = false;
+  bool _respaldoAutomatico = false;
+  bool _cargado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefs.getRespaldoAutomaticoActivo().then((valor) {
+      if (!mounted) return;
+      setState(() {
+        _respaldoAutomatico = valor;
+        _cargado = true;
+      });
+    });
+  }
+
+  Future<void> _cambiarRespaldoAutomatico(bool valor) async {
+    setState(() => _respaldoAutomatico = valor);
+    await _prefs.setRespaldoAutomaticoActivo(valor);
+    if (valor) {
+      await BackupScheduler.instance.activar();
+      _avisar('Se hará un respaldo cada semana, sin que tengas que pedirlo.');
+    } else {
+      await BackupScheduler.instance.desactivar();
+      _avisar('Respaldo automático desactivado.');
+    }
+  }
 
   void _avisar(String mensaje) {
     if (!mounted) return;
@@ -1184,7 +1525,20 @@ class _DatosCardState extends State<DatosCard> {
               'formateas sin respaldo, el historial se va con él.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _respaldoAutomatico,
+              onChanged:
+                  (!_cargado || _ocupado) ? null : _cambiarRespaldoAutomatico,
+              title: const Text('Respaldo automático semanal'),
+              subtitle: const Text(
+                'Guarda un respaldo cada semana en el propio teléfono, sin '
+                'compartirlo. Se conservan los últimos '
+                '${BackupService.maxRespaldosAutomaticos}.',
+              ),
+            ),
+            const SizedBox(height: 8),
             FilledButton.tonalIcon(
               onPressed: _ocupado ? null : _exportarReporte,
               icon: const Icon(Icons.picture_as_pdf_outlined),
@@ -1433,5 +1787,118 @@ class _AsuetosCardState extends State<AsuetosCard> {
       sector: sector,
     );
     return proximos.isEmpty ? null : proximos.first;
+  }
+}
+
+/// Bloqueo de la app con la huella o el PIN/patrón que el usuario ya tiene
+/// configurado en el teléfono. Apagado por defecto.
+class SeguridadCard extends StatefulWidget {
+  const SeguridadCard({super.key});
+
+  @override
+  State<SeguridadCard> createState() => _SeguridadCardState();
+}
+
+class _SeguridadCardState extends State<SeguridadCard> {
+  final PrefsService _prefs = PrefsService();
+  bool _activo = false;
+  bool _cargado = false;
+  bool _procesando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefs.getBloqueoActivo().then((valor) {
+      if (!mounted) return;
+      setState(() {
+        _activo = valor;
+        _cargado = true;
+      });
+    });
+  }
+
+  void _avisar(String mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  Future<void> _cambiar(bool valor) async {
+    if (!valor) {
+      await _prefs.setBloqueoActivo(false);
+      setState(() => _activo = false);
+      _avisar('Bloqueo desactivado.');
+      return;
+    }
+
+    setState(() => _procesando = true);
+    final soportado = await LockService.instance.puedeAutenticar();
+    if (!soportado) {
+      if (!mounted) return;
+      setState(() => _procesando = false);
+      _avisar(
+        'El teléfono no tiene huella, PIN ni patrón configurados: no hay '
+        'con qué desbloquear.',
+      );
+      return;
+    }
+
+    // Se pide la verificación antes de activar, y no después: así el
+    // usuario comprueba que puede desbloquear antes de dejar la app
+    // encerrada tras un bloqueo que no funciona.
+    final confirmado = await LockService.instance.autenticar();
+    if (!mounted) return;
+    setState(() => _procesando = false);
+    if (!confirmado) {
+      _avisar('No se pudo confirmar tu identidad. El bloqueo sigue apagado.');
+      return;
+    }
+
+    await _prefs.setBloqueoActivo(true);
+    if (!mounted) return;
+    setState(() => _activo = true);
+    _avisar('Listo: la app pedirá tu huella o PIN al abrirse.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.fingerprint),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Seguridad',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (_procesando)
+                  const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _activo,
+              onChanged: (!_cargado || _procesando) ? null : _cambiar,
+              title: const Text('Bloqueo con huella o PIN'),
+              subtitle: const Text(
+                'Pide la huella o el PIN del teléfono cada vez que se abre '
+                'la app. No se guarda ninguna clave propia.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

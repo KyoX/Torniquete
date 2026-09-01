@@ -40,6 +40,9 @@ class AppProvider extends ChangeNotifier {
   /// Dónde queda el trabajo y con qué radio de tolerancia.
   SedeConfig sede = const SedeConfig();
 
+  /// Segunda sede, opcional: otra oficina, un coworking, una sucursal.
+  SedeSecundaria sede2 = const SedeSecundaria();
+
   /// Si la app reconoce los asuetos de ley de El Salvador.
   bool asuetosActivos = true;
 
@@ -57,6 +60,7 @@ class AppProvider extends ChangeNotifier {
     descuentoAlmuerzoMinutos = await _prefsService.getDescuentoAlmuerzo();
     recordatorios = await _prefsService.getRecordatorios();
     sede = await _prefsService.getSede();
+    sede2 = await _prefsService.getSede2();
     asuetosActivos = await _prefsService.getAsuetosActivos();
     sector = await _prefsService.getSector();
     modoTema = await _prefsService.getModoTema();
@@ -74,7 +78,7 @@ class AppProvider extends ChangeNotifier {
   /// vez que la app vuelve a primer plano: es lo que hace que conceder el
   /// permiso desde los ajustes de Android surta efecto sin reiniciar nada.
   Future<bool> resincronizarGeocerca() =>
-      GeocercaService.instance.configurarSede(sede);
+      GeocercaService.instance.configurarSede(sede, sede2: sede2);
 
   Future<void> guardarConfiguracion({
     required String nombre,
@@ -183,6 +187,23 @@ class AppProvider extends ChangeNotifier {
     sede = await _prefsService.getSede();
     notifyListeners();
     await _reprogramarRecordatorios();
+    await resincronizarGeocerca();
+  }
+
+  /// Guarda la segunda sede y le pasa al sistema las zonas a vigilar. A
+  /// diferencia de [guardarSede], no toca los recordatorios: la segunda sede
+  /// no tiene días propios, así que no puede cambiarlos.
+  Future<bool> guardarSede2(SedeSecundaria nueva) async {
+    await _prefsService.guardarSede2(nueva);
+    sede2 = await _prefsService.getSede2();
+    notifyListeners();
+    return resincronizarGeocerca();
+  }
+
+  Future<void> borrarSede2() async {
+    await _prefsService.borrarSede2();
+    sede2 = await _prefsService.getSede2();
+    notifyListeners();
     await resincronizarGeocerca();
   }
 

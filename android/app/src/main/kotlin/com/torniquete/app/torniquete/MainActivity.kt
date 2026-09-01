@@ -4,7 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -13,8 +13,12 @@ import io.flutter.plugin.common.MethodChannel
  * expone el canal con el que Dart configura la geocerca y recoge la marca que
  * el usuario acepto desde el aviso de llegada, el de salida, el widget de
  * inicio o la ficha de Ajustes rapidos.
+ *
+ * Extiende FlutterFragmentActivity (no FlutterActivity): el bloqueo con
+ * huella o PIN (local_auth) necesita una FragmentActivity de verdad para
+ * mostrar el dialogo biometrico del sistema.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     companion object {
         private const val CANAL = "torniquete/geocerca"
@@ -101,6 +105,14 @@ class MainActivity : FlutterActivity() {
                             nombre = llamada.argument<String>("nombre"),
                             diasOficina = llamada.argument<List<*>>("dias"),
                         )
+                        GeocercaStore.guardarSede2(
+                            context = this,
+                            activa = llamada.argument<Boolean>("activa2") ?: false,
+                            latitud = llamada.argument<Double>("latitud2"),
+                            longitud = llamada.argument<Double>("longitud2"),
+                            radioMetros = llamada.argument<Int>("radio2") ?: 200,
+                            nombre = llamada.argument<String>("nombre2"),
+                        )
                         GeocercaLlegada.sincronizar(this) { respuesta.success(it) }
                     }
 
@@ -118,7 +130,7 @@ class MainActivity : FlutterActivity() {
                     "estado" -> respuesta.success(
                         mapOf(
                             "vigilando" to (
-                                GeocercaStore.sedeActiva(this) &&
+                                (GeocercaStore.sedeActiva(this) || GeocercaStore.sede2Activa(this)) &&
                                     GeocercaLlegada.puedeVigilar(this)
                                 ),
                             "permisoDeFondo" to GeocercaLlegada.puedeVigilar(this),
