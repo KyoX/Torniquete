@@ -70,53 +70,81 @@ class PausaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tema = Theme.of(context);
-    return ListTile(
-      leading: Icon(
-        esAlmuerzo ? Icons.lunch_dining : Icons.pause_circle_outline,
-        color: pausa.abierta ? tema.colorScheme.primary : null,
-      ),
-      title: Text(_titulo),
-      subtitle: Text(_duracion, style: tema.textTheme.bodySmall),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          UbicacionIndicador(
-            ubicacion: evidenciaInicio.ubicacion,
-            capturando: evidenciaInicio.capturando,
-            etiqueta: '$_titulo · salida',
-            geocerca: evidenciaInicio.geocerca,
+          Row(
+            children: [
+              Icon(
+                esAlmuerzo ? Icons.lunch_dining : Icons.pause_circle_outline,
+                color: pausa.abierta ? tema.colorScheme.primary : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _titulo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _duracion,
+                      style: tema.textTheme.bodySmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (onEliminar != null)
+                IconButton(
+                  tooltip: 'Borrar pausa',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: onEliminar,
+                ),
+            ],
           ),
-          _Hora(
-            texto: TimeUtils.formatHHmm(pausa.inicio),
-            onPressed: () => _editar(
-              context,
-              actual: pausa.inicio,
-              onElegir: onEditarInicio,
-            ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              UbicacionIndicador(
+                ubicacion: evidenciaInicio.ubicacion,
+                capturando: evidenciaInicio.capturando,
+                etiqueta: '$_titulo · salida',
+                geocerca: evidenciaInicio.geocerca,
+              ),
+              _Hora(
+                texto: TimeUtils.formatHHmm(pausa.inicio),
+                onPressed: () => _editar(
+                  context,
+                  actual: pausa.inicio,
+                  onElegir: onEditarInicio,
+                ),
+              ),
+              const Text('→'),
+              _Hora(
+                texto: TimeUtils.formatHHmm(pausa.fin),
+                onPressed: () => _editar(
+                  context,
+                  actual: pausa.fin,
+                  onElegir: onEditarFin,
+                ),
+              ),
+              UbicacionIndicador(
+                ubicacion: evidenciaFin.ubicacion,
+                capturando: evidenciaFin.capturando,
+                etiqueta: '$_titulo · regreso',
+                geocerca: evidenciaFin.geocerca,
+              ),
+            ],
           ),
-          const Text('→'),
-          _Hora(
-            texto: TimeUtils.formatHHmm(pausa.fin),
-            onPressed: () => _editar(
-              context,
-              actual: pausa.fin,
-              onElegir: onEditarFin,
-            ),
-          ),
-          UbicacionIndicador(
-            ubicacion: evidenciaFin.ubicacion,
-            capturando: evidenciaFin.capturando,
-            etiqueta: '$_titulo · regreso',
-            geocerca: evidenciaFin.geocerca,
-          ),
-          if (onEliminar != null)
-            IconButton(
-              tooltip: 'Borrar pausa',
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              icon: const Icon(Icons.close, size: 18),
-              onPressed: onEliminar,
-            ),
         ],
       ),
     );
